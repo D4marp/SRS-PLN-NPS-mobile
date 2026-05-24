@@ -1,0 +1,322 @@
+enum BookingStatus {
+  pending,
+  confirmed,
+  rejected,
+  cancelled,
+  completed,
+}
+
+class BookingModel {
+  final String id;
+  final String userId;
+  final String roomId;
+  final DateTime bookingDate; // Tanggal booking (same day booking only)
+  final String checkInTime;  // Format: "HH:mm" e.g., "14:00"
+  final String checkOutTime; // Format: "HH:mm" e.g., "11:00"
+  final int numberOfGuests;
+  final BookingStatus status;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+  final String? purpose; // Purpose of booking (meeting, class, event, etc.)
+
+  // Approval fields
+  final String? rejectionReason;
+  final String? approvedBy; // userId of admin who approved/rejected
+  final DateTime? approvedAt;
+
+  // Additional room details for display
+  final String? roomName;
+  final String? roomLocation;
+  final String? roomImageUrl;
+  final String? bookedForName;
+  final String? bookedForCompany;
+  final String? paraPihak;
+  final String? divisi;
+
+  // User details for display
+  final String? userName;
+  final String? userEmail;
+
+  // Feedback fields
+  final bool hasFeedback;
+  final String? feedbackSatisfaction; // "satisfied" or "unsatisfied"
+  final String? feedbackReason;
+
+  // Early check-in/check-out fields
+  final String? actualCheckInTime; // Format: "HH:mm"
+  final String? actualCheckOutTime; // Format: "HH:mm"
+  final int? actualDurationMinutes;
+
+  BookingModel({
+    required this.id,
+    required this.userId,
+    required this.roomId,
+    required this.bookingDate,
+    required this.checkInTime,
+    required this.checkOutTime,
+    required this.numberOfGuests,
+    required this.status,
+    required this.createdAt,
+    this.updatedAt,
+    this.purpose,
+    this.rejectionReason,
+    this.approvedBy,
+    this.approvedAt,
+    this.roomName,
+    this.roomLocation,
+    this.roomImageUrl,
+    this.bookedForName,
+    this.bookedForCompany,
+    this.paraPihak,
+    this.divisi,
+    this.userName,
+    this.userEmail,
+    this.hasFeedback = false,
+    this.feedbackSatisfaction,
+    this.feedbackReason,
+    this.actualCheckInTime,
+    this.actualCheckOutTime,
+    this.actualDurationMinutes,
+  });
+
+  factory BookingModel.fromJson(Map<String, dynamic> json) {
+    final feedbackJson = json['feedback'];
+    final hasNestedFeedback = feedbackJson is Map<String, dynamic>;
+    final nestedFeedback = hasNestedFeedback ? Map<String, dynamic>.from(feedbackJson) : null;
+
+    return BookingModel(
+      id: json['id'] ?? '',
+      userId: json['userId'] ?? '',
+      roomId: json['roomId'] ?? '',
+      bookingDate:
+          DateTime.fromMillisecondsSinceEpoch(json['bookingDate'] ?? 0),
+      checkInTime: json['checkInTime'] ?? '08:00',
+      checkOutTime: json['checkOutTime'] ?? '17:00',
+      numberOfGuests: json['numberOfGuests'] ?? 1,
+      status: BookingStatus.values.firstWhere(
+        (e) => e.name == json['status'],
+        orElse: () => BookingStatus.pending,
+      ),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(json['createdAt'] ?? 0),
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(json['updatedAt'])
+          : null,
+      purpose: json['purpose'],
+      rejectionReason: json['rejectionReason'],
+      approvedBy: json['approvedBy'],
+      approvedAt: json['approvedAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(json['approvedAt'])
+          : null,
+      roomName: json['roomName'],
+      roomLocation: json['roomLocation'],
+      roomImageUrl: json['roomImageUrl'],
+      bookedForName: json['bookedForName'],
+      bookedForCompany: json['bookedForCompany'],
+      paraPihak: json['paraPihak'],
+      divisi: json['divisi'],
+      userName: json['userName'],
+      userEmail: json['userEmail'],
+      hasFeedback: json['hasFeedback'] ?? hasNestedFeedback,
+      feedbackSatisfaction: nestedFeedback?['satisfactionLevel'] ?? json['feedbackSatisfaction'],
+      feedbackReason: nestedFeedback?['reason'] ?? json['feedbackReason'],
+      actualCheckInTime: json['actualCheckInTime'],
+      actualCheckOutTime: json['actualCheckOutTime'],
+      actualDurationMinutes: json['actualDurationMinutes'] is int
+          ? json['actualDurationMinutes']
+          : (json['actualDurationMinutes'] != null
+              ? int.tryParse(json['actualDurationMinutes'].toString())
+              : null),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'userId': userId,
+      'roomId': roomId,
+      'bookingDate': bookingDate.millisecondsSinceEpoch,
+      'checkInTime': checkInTime,
+      'checkOutTime': checkOutTime,
+      'numberOfGuests': numberOfGuests,
+      'status': status.name,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'updatedAt': updatedAt?.millisecondsSinceEpoch,
+      'purpose': purpose,
+      'rejectionReason': rejectionReason,
+      'approvedBy': approvedBy,
+      'approvedAt': approvedAt?.millisecondsSinceEpoch,
+      'roomName': roomName,
+      'roomLocation': roomLocation,
+      'roomImageUrl': roomImageUrl,
+      'bookedForName': bookedForName,
+      'bookedForCompany': bookedForCompany,
+      'paraPihak': paraPihak,
+      'divisi': divisi,
+      'userName': userName,
+      'userEmail': userEmail,
+      'hasFeedback': hasFeedback,
+      'feedbackSatisfaction': feedbackSatisfaction,
+      'feedbackReason': feedbackReason,
+      'actualCheckInTime': actualCheckInTime,
+      'actualCheckOutTime': actualCheckOutTime,
+      'actualDurationMinutes': actualDurationMinutes,
+    };
+  }
+
+  BookingModel copyWith({
+    String? id,
+    String? userId,
+    String? roomId,
+    DateTime? bookingDate,
+    String? checkInTime,
+    String? checkOutTime,
+    int? numberOfGuests,
+    BookingStatus? status,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? purpose,
+    String? rejectionReason,
+    String? approvedBy,
+    DateTime? approvedAt,
+    String? roomName,
+    String? roomLocation,
+    String? roomImageUrl,
+    String? bookedForName,
+    String? bookedForCompany,
+    String? paraPihak,
+    String? divisi,
+    String? userName,
+    String? userEmail,
+    bool? hasFeedback,
+    String? feedbackSatisfaction,
+    String? feedbackReason,
+    String? actualCheckInTime,
+    String? actualCheckOutTime,
+    int? actualDurationMinutes,
+  }) {
+    return BookingModel(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      roomId: roomId ?? this.roomId,
+      bookingDate: bookingDate ?? this.bookingDate,
+      checkInTime: checkInTime ?? this.checkInTime,
+      checkOutTime: checkOutTime ?? this.checkOutTime,
+      numberOfGuests: numberOfGuests ?? this.numberOfGuests,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      purpose: purpose ?? this.purpose,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
+      approvedBy: approvedBy ?? this.approvedBy,
+      approvedAt: approvedAt ?? this.approvedAt,
+      roomName: roomName ?? this.roomName,
+      roomLocation: roomLocation ?? this.roomLocation,
+      roomImageUrl: roomImageUrl ?? this.roomImageUrl,
+      bookedForName: bookedForName ?? this.bookedForName,
+      bookedForCompany: bookedForCompany ?? this.bookedForCompany,
+      paraPihak: paraPihak ?? this.paraPihak,
+      divisi: divisi ?? this.divisi,
+      userName: userName ?? this.userName,
+      userEmail: userEmail ?? this.userEmail,
+      hasFeedback: hasFeedback ?? this.hasFeedback,
+      feedbackSatisfaction: feedbackSatisfaction ?? this.feedbackSatisfaction,
+      feedbackReason: feedbackReason ?? this.feedbackReason,
+      actualCheckInTime: actualCheckInTime ?? this.actualCheckInTime,
+      actualCheckOutTime: actualCheckOutTime ?? this.actualCheckOutTime,
+      actualDurationMinutes: actualDurationMinutes ?? this.actualDurationMinutes,
+    );
+  }
+
+  // Computed properties
+  String get statusDisplayName {
+    switch (status) {
+      case BookingStatus.pending:
+        return 'Pending';
+      case BookingStatus.confirmed:
+        return 'Confirmed';
+      case BookingStatus.rejected:
+        return 'Rejected';
+      case BookingStatus.cancelled:
+        return 'Cancelled';
+      case BookingStatus.completed:
+        return 'Completed';
+    }
+  }
+
+  bool get canBeCancelled {
+    return status == BookingStatus.pending || status == BookingStatus.confirmed;
+  }
+
+  bool get isActive {
+    return status == BookingStatus.confirmed;
+  }
+
+  bool get shouldShowFeedbackModal {
+    return status == BookingStatus.completed &&
+        actualCheckOutTime != null &&
+        actualCheckOutTime!.isNotEmpty &&
+        !hasFeedback;
+  }
+
+  bool get shouldShowEarlyCheckInCheckOut {
+    return (status == BookingStatus.confirmed || status == BookingStatus.pending);
+  }
+
+  bool get hasActualCheckTimes {
+    return actualCheckInTime != null && actualCheckOutTime != null;
+  }
+
+  String get actualDurationLabel {
+    if (actualDurationMinutes != null) {
+      final hours = actualDurationMinutes! ~/ 60;
+      final minutes = actualDurationMinutes! % 60;
+      if (hours > 0 && minutes > 0) {
+        return '$hours jam $minutes menit';
+      }
+      if (hours > 0) {
+        return '$hours jam';
+      }
+      return '$minutes menit';
+    }
+
+    if (actualCheckInTime == null || actualCheckOutTime == null) {
+      return '-';
+    }
+
+    final start = actualCheckInTime!.split(':');
+    final end = actualCheckOutTime!.split(':');
+    if (start.length != 2 || end.length != 2) return '-';
+
+    final startHour = int.tryParse(start[0]);
+    final startMinute = int.tryParse(start[1]);
+    final endHour = int.tryParse(end[0]);
+    final endMinute = int.tryParse(end[1]);
+    if (startHour == null || startMinute == null || endHour == null || endMinute == null) {
+      return '-';
+    }
+
+    final startMinutes = startHour * 60 + startMinute;
+    var endMinutes = endHour * 60 + endMinute;
+    if (endMinutes < startMinutes) {
+      endMinutes += 24 * 60;
+    }
+    final durationMinutes = endMinutes - startMinutes;
+    final hours = durationMinutes ~/ 60;
+    final minutes = durationMinutes % 60;
+    if (hours > 0 && minutes > 0) {
+      return '$hours jam $minutes menit';
+    }
+    if (hours > 0) {
+      return '$hours jam';
+    }
+    return '$minutes menit';
+  }
+
+  String get formattedDate {
+    return '${bookingDate.day}/${bookingDate.month}/${bookingDate.year}';
+  }
+
+  String get formattedTimeRange {
+    return '$checkInTime - $checkOutTime';
+  }
+}
