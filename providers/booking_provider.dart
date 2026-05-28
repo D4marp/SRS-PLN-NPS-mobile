@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../models/booking_model.dart';
 import '../services/api_booking_service.dart';
 import '../services/websocket_service.dart';
 
 class BookingProvider extends ChangeNotifier {
+  // Enabled only when running as web. Other platforms keep provider as no-op.
+  final bool _enabled = kIsWeb;
+
+  bool get isEnabled => _enabled;
+
   List<BookingModel> _userBookings = [];
   List<BookingModel> _upcomingBookings = [];
   List<BookingModel> _pastBookings = [];
@@ -32,6 +38,10 @@ class BookingProvider extends ChangeNotifier {
   /// Load user bookings with real-time updates via WebSocket.
   /// The server filters bookings by the user's JWT token.
   void loadUserBookings(String userId) {
+    if (!_enabled) {
+      debugPrint('BookingProvider: loadUserBookings skipped (not web)');
+      return;
+    }
     try {
       _clearError();
 
@@ -87,6 +97,10 @@ class BookingProvider extends ChangeNotifier {
     String? bookedForCompany,
     String? purpose,
   }) async {
+    if (!_enabled) {
+      debugPrint('BookingProvider: createBooking skipped (not web)');
+      return null;
+    }
     try {
       _setLoading(true);
       _clearError();
@@ -113,6 +127,10 @@ class BookingProvider extends ChangeNotifier {
 
   // Cancel booking
   Future<bool> cancelBooking(String bookingId) async {
+    if (!_enabled) {
+      debugPrint('BookingProvider: cancelBooking skipped (not web)');
+      return false;
+    }
     try {
       _setLoading(true);
       _clearError();
@@ -129,6 +147,10 @@ class BookingProvider extends ChangeNotifier {
 
   // Get booking by ID — try local cache first, then API
   Future<BookingModel?> getBookingById(String bookingId) async {
+    if (!_enabled) {
+      debugPrint('BookingProvider: getBookingById skipped (not web)');
+      return null;
+    }
     try {
       final cached = _userBookings.where((b) => b.id == bookingId).firstOrNull;
       if (cached != null) return cached;
@@ -179,6 +201,10 @@ class BookingProvider extends ChangeNotifier {
 
   // Get bookings by room ID
   Future<List<BookingModel>> getBookingsByRoomId(String roomId) async {
+    if (!_enabled) {
+      debugPrint('BookingProvider: getBookingsByRoomId skipped (not web)');
+      return [];
+    }
     try {
       return await ApiBookingService.getRoomBookings(roomId);
     } catch (e) {
@@ -189,11 +215,27 @@ class BookingProvider extends ChangeNotifier {
 
   // Get bookings for a room as a one-shot stream (schedule/availability display)
   Stream<List<BookingModel>> getBookingsByRoomIdStream(String roomId) {
+    if (!_enabled) {
+      return Stream.value(<BookingModel>[]);
+    }
     return Stream.fromFuture(ApiBookingService.getRoomBookings(roomId));
+  }
+
+  /// Real-time stream of bookings for a specific room via WebSocket.
+  /// Filters all bookings from WebSocket by roomId for live updates.
+  Stream<List<BookingModel>> watchBookingsByRoomIdStream(String roomId) {
+    if (!_enabled) {
+      return Stream.value(<BookingModel>[]);
+    }
+    return WebSocketService.watchBookings().map((bookings) {
+      // Filter bookings for the specific room
+      return bookings.where((booking) => booking.roomId == roomId).toList();
+    });
   }
 
   // Refresh bookings
   Future<void> refreshBookings(String userId) async {
+    if (!_enabled) return;
     loadUserBookings(userId);
   }
 
@@ -241,6 +283,10 @@ class BookingProvider extends ChangeNotifier {
     required String satisfaction,
     required String reason,
   }) async {
+    if (!_enabled) {
+      debugPrint('BookingProvider: submitFeedback skipped (not web)');
+      return false;
+    }
     try {
       _setLoading(true);
       _clearError();
@@ -274,17 +320,22 @@ class BookingProvider extends ChangeNotifier {
     required String bookingId,
     String? actualCheckInTime,
     String? actualCheckOutTime,
-  }) async {
+    bool markComplete = false,
+    if (!_enabled) {
+      debugPrint('BookingProvider: submitCheckInCheckOut skipped (not web)');
+      return false;
+    }
     try {
       _setLoading(true);
       _clearError();
 
       final updatedBooking = await ApiBookingService.submitCheckInCheckOut(
+      final updatedBooking = await ApiBookingService.submitCheckInCheckOut(
         bookingId: bookingId,
         actualCheckInTime: actualCheckInTime,
         actualCheckOutTime: actualCheckOutTime,
+        markComplete: markComplete,
       );
-
       // Update the booking in the local list
       final index = _userBookings.indexWhere((b) => b.id == bookingId);
       if (index != -1) {

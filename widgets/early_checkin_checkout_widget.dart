@@ -129,6 +129,7 @@ class _EarlyCheckInCheckOutWidgetState extends State<EarlyCheckInCheckOutWidget>
         bookingId: widget.booking.id,
         actualCheckInTime: checkInStr,
         actualCheckOutTime: checkOutStr,
+        markComplete: checkOutStr.isNotEmpty,
       );
 
       if (mounted) {

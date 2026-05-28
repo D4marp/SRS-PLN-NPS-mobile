@@ -1,5 +1,6 @@
 import 'package:bookify_rooms/core/gen/assets.gen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/booking_provider.dart';
@@ -137,6 +138,22 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen>
           debugPrint('   - pastBookings count: ${bookingProvider.pastBookings.length}');
           debugPrint('   - errorMessage: ${bookingProvider.errorMessage}');
           
+          // If booking features are disabled (non-web), show fallback message
+          if (!kIsWeb || !bookingProvider.isEnabled) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Text(
+                  'Fitur booking hanya tersedia pada versi web. Untuk aplikasi mobile, lihat halaman room dan feedback.',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: AppColors.secondaryText,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
           if (bookingProvider.isLoading && bookingProvider.userBookings.isEmpty) {
             debugPrint('🔄 Showing shimmer loading...');
             return _buildShimmerLoading();
@@ -820,7 +837,7 @@ class _BookingDetailsSheetState extends State<_BookingDetailsSheet> {
                     if (_currentBooking.bookedForName != null && _currentBooking.bookedForName!.isNotEmpty)
                       _buildDetailRow('Untuk', _currentBooking.bookedForName!),
                     if (_currentBooking.bookedForCompany != null && _currentBooking.bookedForCompany!.isNotEmpty)
-                      _buildDetailRow('Instansi', _currentBooking.bookedForCompany!),
+                      _buildDetailRow('Instansi / Perusahaan', _currentBooking.bookedForCompany!),
                     if (_currentBooking.purpose != null && _currentBooking.purpose!.isNotEmpty)
                       _buildDetailRow('Purpose', _currentBooking.purpose!),
 
@@ -893,6 +910,32 @@ class _BookingDetailsSheetState extends State<_BookingDetailsSheet> {
                                     color: AppColors.primaryText,
                               ),
                             ),
+                            if (_currentBooking.feedbackComplaintItems.isNotEmpty) ...[
+                              const SizedBox(height: AppSpacing.sm),
+                              Text(
+                                'Kendala:',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.secondaryText,
+                                    ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _currentBooking.feedbackComplaintItems.join(', '),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: AppColors.primaryText,
+                                    ),
+                              ),
+                            ],
+                            if (_currentBooking.feedbackComplaintOther != null && _currentBooking.feedbackComplaintOther!.isNotEmpty) ...[
+                              const SizedBox(height: AppSpacing.sm),
+                              Text(
+                                'Lainnya: ${_currentBooking.feedbackComplaintOther}',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: AppColors.primaryText,
+                                    ),
+                              ),
+                            ],
                           ],
                         ),
                       ),

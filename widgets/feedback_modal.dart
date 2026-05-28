@@ -19,26 +19,37 @@ class FeedbackModal extends StatefulWidget {
 }
 
 const _kComplaintTags = [
-  'Ruang rapat tidak bersih',
-  'Kursi kurang',
   'AC rusak',
-  'Proyektor rusak',
-  'LCD rusak',
-  'Pointer tidak ada',
-  'Perangkat zoom rusak',
+  'HDMI rusak',
+  'LAYAR TV rusak',
+  'LAYAR VIDETRON rusak',
+  'LAYAR PROYEKTOR rusak',
+  'SPLITER rusak',
+  'PERANGKAT VIDEO CONFERENCE rusak',
+  'MIC rusak',
+  'SPEAKER rusak',
+  'POINTER rusak',
+  'FLIPCHART rusak',
 ];
 
 class _FeedbackModalState extends State<FeedbackModal> {
   String? _selectedSatisfaction; // "satisfied" or "unsatisfied"
   final List<String> _selectedTags = [];
+  final TextEditingController _otherComplaintController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
   bool _showApology = false;
   bool _showThankYou = false;
 
+  void _startAutoClose() {
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) Navigator.of(context).pop();
+    });
+  }
+
   bool get _isReasonValid {
     if (_selectedSatisfaction == 'unsatisfied') {
-      return _selectedTags.isNotEmpty;
+      return _selectedTags.isNotEmpty || _otherComplaintController.text.trim().isNotEmpty;
     }
     return true;
   }
@@ -49,7 +60,15 @@ class _FeedbackModalState extends State<FeedbackModal> {
 
   String _buildReason() {
     if (_selectedSatisfaction == 'unsatisfied') {
-      return 'Komplain: ${_selectedTags.join(', ')}';
+      final parts = <String>[];
+      if (_selectedTags.isNotEmpty) {
+        parts.add(_selectedTags.join(', '));
+      }
+      final other = _otherComplaintController.text.trim();
+      if (other.isNotEmpty) {
+        parts.add('Lainnya: $other');
+      }
+      return 'Komplain: ${parts.join(' | ')}';
     }
     return 'Puas dengan layanan.';
   }
@@ -67,6 +86,10 @@ class _FeedbackModalState extends State<FeedbackModal> {
         bookingId: widget.booking.id,
         satisfaction: _selectedSatisfaction!,
         reason: _buildReason(),
+        complaintItems: List<String>.from(_selectedTags),
+        complaintOther: _otherComplaintController.text.trim().isEmpty
+            ? null
+            : _otherComplaintController.text.trim(),
       );
 
       if (mounted) {
@@ -79,6 +102,7 @@ class _FeedbackModalState extends State<FeedbackModal> {
           setState(() {
             _showThankYou = true;
           });
+          _startAutoClose();
         }
       }
     } catch (e) {
@@ -97,7 +121,79 @@ class _FeedbackModalState extends State<FeedbackModal> {
   }
 
   @override
+  void dispose() {
+    _otherComplaintController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Show dedicated thank-you screen
+    if (_showThankYou) {
+      return Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.xl,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: 120,
+                width: 120,
+                child: Assets.images.puas.image(),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                'Terima Kasih!',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: AppColors.successGreen,
+                      fontWeight: FontWeight.bold,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Kami senang melayani Anda. Terima kasih atas penilaian positif Anda. '
+                'Masukan Anda sangat berharga bagi kami untuk terus meningkatkan pelayanan.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.primaryText,
+                      fontWeight: FontWeight.w600,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.successGreen,
+                  ),
+                  child: const Text(
+                    'Selesai',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Menutup otomatis dalam 3 detik...',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.secondaryText,
+                      fontStyle: FontStyle.italic,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Dialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -217,6 +313,17 @@ class _FeedbackModalState extends State<FeedbackModal> {
                           ),
                     ),
                   ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Pilih fasilitas yang rusak, lalu tambahkan opsi lainnya jika perlu.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.secondaryText,
+                            fontStyle: FontStyle.italic,
+                          ),
+                    ),
+                  ),
                   const SizedBox(height: AppSpacing.sm),
                   Wrap(
                     spacing: 8,
@@ -256,6 +363,31 @@ class _FeedbackModalState extends State<FeedbackModal> {
                     }).toList(),
                   ),
                   const SizedBox(height: AppSpacing.md),
+                  TextField(
+                    controller: _otherComplaintController,
+                    enabled: !_isLoading,
+                    maxLines: 3,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Lainnya',
+                      hintText: 'Tulis kendala manual jika tidak ada di daftar',
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.borderColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.borderColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.primaryRed, width: 1.5),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
                 ],
 
                 if (_selectedSatisfaction == 'unsatisfied' && _showApology) ...[
@@ -278,47 +410,6 @@ class _FeedbackModalState extends State<FeedbackModal> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
-                ],
-
-                if (_selectedSatisfaction == 'satisfied' && _showThankYou) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(AppSpacing.lg),
-                    decoration: BoxDecoration(
-                      color: AppColors.successGreenLight,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.successGreen, width: 2),
-                    ),
-                    child: Column(
-                      children: [
-                        SizedBox(
-                          height: 100,
-                          width: 100,
-                          child: Assets.images.puas.image(),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        Text(
-                          'Terima Kasih!',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                color: AppColors.successGreen,
-                                fontWeight: FontWeight.bold,
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        Text(
-                          'Kami senang melayani Anda. Terima kasih atas penilaian positif Anda. '
-                          'Masukan Anda sangat berharga bagi kami untuk terus meningkatkan pelayanan.',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: AppColors.primaryText,
-                                fontWeight: FontWeight.w600,
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
                 ],
 
                 // Error message
@@ -394,20 +485,6 @@ class _FeedbackModalState extends State<FeedbackModal> {
                         ),
                       ),
                     ],
-                  ),
-                
-                if (_selectedSatisfaction == 'satisfied' && _showThankYou)
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.successGreen,
-                      ),
-                      child: const Text(
-                        'Selesai',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
                   ),
               ] else
                 ...[

@@ -81,6 +81,11 @@ class WebSocketService {
   /// Returns a broadcast stream that emits a fresh list of [BookingModel].
   /// Requires a valid JWT token (from [ApiConfig.token]).
   static Stream<List<BookingModel>> watchBookings({String? token}) {
+    if (!kIsWeb) {
+      debugPrint('WebSocketService: watchBookings returning empty stream (not web)');
+      return const Stream.empty();
+    }
+
     final jwt = token ?? ApiConfig.token ?? '';
     if (jwt.isEmpty) {
       debugPrint('WebSocket bookings: no token, stream will be empty');

@@ -41,6 +41,8 @@ class BookingModel {
   final bool hasFeedback;
   final String? feedbackSatisfaction; // "satisfied" or "unsatisfied"
   final String? feedbackReason;
+  final List<String> feedbackComplaintItems;
+  final String? feedbackComplaintOther;
 
   // Early check-in/check-out fields
   final String? actualCheckInTime; // Format: "HH:mm"
@@ -74,6 +76,8 @@ class BookingModel {
     this.hasFeedback = false,
     this.feedbackSatisfaction,
     this.feedbackReason,
+    this.feedbackComplaintItems = const [],
+    this.feedbackComplaintOther,
     this.actualCheckInTime,
     this.actualCheckOutTime,
     this.actualDurationMinutes,
@@ -119,6 +123,8 @@ class BookingModel {
       hasFeedback: json['hasFeedback'] ?? hasNestedFeedback,
       feedbackSatisfaction: nestedFeedback?['satisfactionLevel'] ?? json['feedbackSatisfaction'],
       feedbackReason: nestedFeedback?['reason'] ?? json['feedbackReason'],
+        feedbackComplaintItems: _parseFeedbackComplaintItems(nestedFeedback?['complaintItems'] ?? json['feedbackComplaintItems']),
+        feedbackComplaintOther: nestedFeedback?['complaintOther'] ?? json['feedbackComplaintOther'],
       actualCheckInTime: json['actualCheckInTime'],
       actualCheckOutTime: json['actualCheckOutTime'],
       actualDurationMinutes: json['actualDurationMinutes'] is int
@@ -157,6 +163,8 @@ class BookingModel {
       'hasFeedback': hasFeedback,
       'feedbackSatisfaction': feedbackSatisfaction,
       'feedbackReason': feedbackReason,
+      feedbackComplaintItems: feedbackComplaintItems,
+      feedbackComplaintOther: feedbackComplaintOther,
       'actualCheckInTime': actualCheckInTime,
       'actualCheckOutTime': actualCheckOutTime,
       'actualDurationMinutes': actualDurationMinutes,
@@ -190,6 +198,8 @@ class BookingModel {
     bool? hasFeedback,
     String? feedbackSatisfaction,
     String? feedbackReason,
+    List<String>? feedbackComplaintItems,
+    String? feedbackComplaintOther,
     String? actualCheckInTime,
     String? actualCheckOutTime,
     int? actualDurationMinutes,
@@ -221,10 +231,26 @@ class BookingModel {
       hasFeedback: hasFeedback ?? this.hasFeedback,
       feedbackSatisfaction: feedbackSatisfaction ?? this.feedbackSatisfaction,
       feedbackReason: feedbackReason ?? this.feedbackReason,
+      feedbackComplaintItems: feedbackComplaintItems ?? this.feedbackComplaintItems,
+      feedbackComplaintOther: feedbackComplaintOther ?? this.feedbackComplaintOther,
       actualCheckInTime: actualCheckInTime ?? this.actualCheckInTime,
       actualCheckOutTime: actualCheckOutTime ?? this.actualCheckOutTime,
       actualDurationMinutes: actualDurationMinutes ?? this.actualDurationMinutes,
     );
+  }
+
+  static List<String> _parseFeedbackComplaintItems(dynamic value) {
+    if (value is List) {
+      return value.map((item) => item.toString()).where((item) => item.trim().isNotEmpty).toList();
+    }
+    if (value is String && value.trim().isNotEmpty) {
+      return value
+          .split(',')
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    return const [];
   }
 
   // Computed properties

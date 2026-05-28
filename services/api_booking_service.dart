@@ -62,12 +62,16 @@ class ApiBookingService {
     required String bookingId,
     required String satisfaction,
     required String reason,
+    List<String> complaintItems = const [],
+    String? complaintOther,
   }) async {
     await _dio().post(
       '/api/bookings/$bookingId/feedback',
       data: {
         'satisfactionLevel': satisfaction,
         'reason': reason,
+        'complaintItems': complaintItems,
+        if (complaintOther != null && complaintOther.isNotEmpty) 'complaintOther': complaintOther,
       },
     );
     return getBookingById(bookingId);
@@ -79,12 +83,14 @@ class ApiBookingService {
     required String bookingId,
     String? actualCheckInTime,
     String? actualCheckOutTime,
+    bool markComplete = false,
   }) async {
     await _dio().patch(
       '/api/bookings/$bookingId/checkin-checkout',
       data: {
         if (actualCheckInTime != null) 'actualCheckInTime': actualCheckInTime,
         if (actualCheckOutTime != null) 'actualCheckOutTime': actualCheckOutTime,
+        if (markComplete) 'markComplete': true,
       },
     );
     return getBookingById(bookingId);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../models/room_model.dart';
 import '../models/booking_model.dart';
@@ -38,6 +39,12 @@ class RealtimeDataProvider extends ChangeNotifier {
 
   void _initializeStreams() {
     _setupRoomsRealtime();
+    // Only setup bookings stream on web
+    if (kIsWeb) {
+      // booking stream will be setup when user id is available
+    } else {
+      debugPrint('RealtimeDataProvider: bookings realtime disabled (not web)');
+    }
   }
 
   /// Setup realtime listener untuk rooms via WebSocket
@@ -64,6 +71,11 @@ class RealtimeDataProvider extends ChangeNotifier {
 
   /// Setup realtime listener untuk user bookings via WebSocket
   void setupUserBookingsRealtime(String userId) {
+    if (!kIsWeb) {
+      debugPrint('RealtimeDataProvider: setupUserBookingsRealtime skipped (not web)');
+      return;
+    }
+
     _setBookingsLoading(true);
     _clearError();
 
@@ -136,7 +148,7 @@ class RealtimeDataProvider extends ChangeNotifier {
     try {
       _clearError();
       resetToAllRooms();
-      if (userId != null) {
+      if (userId != null && kIsWeb) {
         setupUserBookingsRealtime(userId);
       }
       debugPrint('🔄 All data refreshed');
