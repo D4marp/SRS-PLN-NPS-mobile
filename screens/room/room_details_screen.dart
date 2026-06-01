@@ -40,7 +40,6 @@ class RoomDetailsScreen extends StatefulWidget {
 
 class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
   late Timer _timeUpdateTimer;
-  late Timer _dataRefreshTimer;
   late ValueNotifier<DateTime> _timeNotifier;
   late StreamController<BookingUpdateEvent> _bookingEventController;
   
@@ -59,7 +58,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     ]);
     
     debugPrint('🚀 RoomDetailsScreen initState: Room ID = ${widget.room.id}');
-    debugPrint('🔥 Using REAL-TIME EVENT-DRIVEN architecture with WebSocket!');
+    debugPrint('🔥 Using API-FIRST architecture with WebSocket real-time updates!');
     
     // Initialize time notifier
     _timeNotifier = ValueNotifier<DateTime>(DateTime.now());
@@ -73,25 +72,22 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
         _timeNotifier.value = DateTime.now();
       }
     });
-    
-    // Periodic data refresh every 10 seconds as fallback (in case WebSocket disconnects)
-    _dataRefreshTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (mounted) {
-        debugPrint('🔄 Periodic data refresh triggered (fallback)');
-      }
-    });
   }
 
   List<BookingModel> _filterBookingsForToday(List<BookingModel> bookings) {
-    final today = DateTime.now();
-    final todayOnly = DateTime(today.year, today.month, today.day);
-    
-    final filtered = bookings.where((booking) {
-      final bookingDateOnly = DateTime(booking.bookingDate.year, booking.bookingDate.month, booking.bookingDate.day);
-      return bookingDateOnly.isAtSameMomentAs(todayOnly);
+    // Filter bookings untuk hari ini saja (realtime kios display)
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    return bookings.where((booking) {
+      // Parse booking date to same-day comparison
+      final bookingDay = DateTime(
+        booking.bookingDate.year,
+        booking.bookingDate.month,
+        booking.bookingDate.day,
+      );
+      return bookingDay.isAtSameMomentAs(today);
     }).toList();
-    
-    return filtered;
   }
 
   // Helper untuk check apakah data booking berubah
@@ -122,7 +118,6 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     _timeUpdateTimer.cancel();
-    _dataRefreshTimer.cancel();
     _timeNotifier.dispose();
     _bookingEventController.close();
     super.dispose();
@@ -140,9 +135,16 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
   }
   
   String _getFormattedDate(DateTime time) {
-    final days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    final months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    final days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+    final months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     return '${days[time.weekday - 1]}, ${time.day} ${months[time.month - 1]} ${time.year}';
+  }
+
+  String _getFormattedDateAndTime(DateTime date, String? checkInTime, String? checkOutTime) {
+    final dateStr = _getFormattedDate(date);
+    final timeStart = checkInTime?.replaceAll(':', '.') ?? '';
+    final timeEnd = checkOutTime?.replaceAll(':', '.') ?? '';
+    return '$dateStr $timeStart - $timeEnd';
   }
 
   DateTime? _parseTimeOnDate(DateTime date, String? time) {
@@ -421,10 +423,13 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Facilites',
-                      fontSize: screenWidth * 0.0125,
-                      fontFamily: 'Roboto',
-                      fontWeight: FontWeight.w600,
+                      'Facilities',
+                      style: TextStyle(
+                         color: Colors.white,
+                        fontSize: screenWidth * 0.0125,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   SizedBox(height: screenHeight * 0.012),
@@ -434,7 +439,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                       vertical: screenHeight * 0.015,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Colors.white.withOpacity(0.25),
                       borderRadius: BorderRadius.circular(108),
                     ),
                     child: Row(
@@ -461,7 +466,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                   SizedBox(height: screenHeight * 0.025),
                   // Facility
                   Text(
-                    'Facility:',
+                    'Facilities:',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: screenWidth * 0.0125,
@@ -533,17 +538,49 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                 }
 
                                 final hasOngoingMeeting = ongoingBooking != null;
+
+                                // When there's no ongoing meeting, compute availability
+                                // range until next booking today (or 24.00) and show it
+                                // in the yellow header text (as requested).
+                                String availabilityHeader = '';
+                                if (!hasOngoingMeeting && snapshot.hasData && snapshot.data != null) {
+                                  final todayBookings = _filterBookingsForToday(snapshot.data!);
+                                  DateTime? nextStart;
+                                  for (var b in todayBookings) {
+                                    final start = _parseTimeOnDate(b.bookingDate, b.checkInTime);
+                                    if (start != null && start.isAfter(currentTime)) {
+                                      if (nextStart == null || start.isBefore(nextStart)) {
+                                        nextStart = start;
+                                      }
+                                    }
+                                  }
+                                  final now = currentTime;
+                                  final startStr = '${now.hour.toString().padLeft(2,'0')}.${now.minute.toString().padLeft(2,'0')}';
+                                  final endStr = nextStart != null
+                                      ? '${nextStart.hour.toString().padLeft(2,'0')}.${nextStart.minute.toString().padLeft(2,'0')}'
+                                      : '24.00';
+                                  availabilityHeader = '$startStr - $endStr';
+                                }
+
                                 final meetingTitle = hasOngoingMeeting
                                     ? (ongoingBooking!.purpose?.isNotEmpty == true
                                         ? ongoingBooking!.purpose!
                                         : 'Rapat')
-                                    : '${currentTime.hour.toString().padLeft(2, '0')}:${currentTime.minute.toString().padLeft(2, '0')}';
+                                    : (availabilityHeader.isNotEmpty
+                                        ? availabilityHeader
+                                        : '${currentTime.hour.toString().padLeft(2, '0')}:${currentTime.minute.toString().padLeft(2, '0')}');
                                 final meetingScheduleLine = hasOngoingMeeting
                                     ? '${_getFormattedDate(ongoingBooking!.bookingDate)} ${_formatTimeForDisplay(ongoingBooking!.checkInTime)} - ${_formatTimeForDisplay(ongoingBooking!.checkOutTime)}'
                                     : _getFormattedDate(currentTime);
                                 final meetingParaPihak = hasOngoingMeeting
                                     ? ongoingBooking!.paraPihak
                                     : null;
+                                    final meetingBookedForName = hasOngoingMeeting
+    ? ongoingBooking!.bookedForName
+    : null;
+final meetingBookedForCompany = hasOngoingMeeting
+    ? ongoingBooking!.bookedForCompany
+    : null;
 
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -572,10 +609,10 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                     SizedBox(height: screenHeight * 0.003),
                                     if (meetingParaPihak != null && meetingParaPihak.isNotEmpty) ...[
                                       Text(
-                                        'Instansi/Perusahaan: $meetingParaPihak',
+                                        meetingParaPihak,
                                         style: TextStyle(
                                           color: Colors.white70,
-                                          fontSize: screenWidth * 0.0118,
+                                          fontSize: screenWidth * 0.012,
                                           fontFamily: 'Roboto',
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -583,6 +620,20 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ],
+                                    if (meetingBookedForName != null && meetingBookedForName.isNotEmpty) ...[
+  SizedBox(height: screenHeight * 0.003),
+  Text(
+    ' $meetingBookedForName${meetingBookedForCompany != null && meetingBookedForCompany.isNotEmpty ? ' · $meetingBookedForCompany' : ''}',
+    style: TextStyle(
+      color: Colors.white70,
+      fontSize: screenWidth * 0.011,
+      fontFamily: 'Roboto',
+      fontWeight: FontWeight.w500,
+    ),
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+  ),
+],
                                   ],
                                 );
                               },
@@ -655,7 +706,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
             vertical: screenHeight * 0.003,
           ),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Colors.white.withOpacity(0.25),
             borderRadius: BorderRadius.circular(6),
           ),
           child: Row(
@@ -704,6 +755,9 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
             bool isAvailable = true;
             String? ongoingMeetingTitle;
             String? paraPihak;
+            String? ongoingBookedForName;
+            String? ongoingBookedForCompany;
+            String? ongoingDateTimeStr;
             
             String availabilityRange = '';
             if (snapshot.hasData && snapshot.data != null) {
@@ -736,6 +790,13 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                     // Get meeting title from purpose field
                     ongoingMeetingTitle = booking.purpose ?? 'Meeting';
                     paraPihak = booking.paraPihak;
+                    ongoingBookedForName = booking.bookedForName;
+                    ongoingBookedForCompany = booking.bookedForCompany;
+                    ongoingDateTimeStr = _getFormattedDateAndTime(
+                      booking.bookingDate,
+                      booking.checkInTime,
+                      booking.checkOutTime,
+                    );
                     break;
                   }
                 } catch (e) {
@@ -765,96 +826,61 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
             
             return Row(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: screenWidth * 0.025,
-                    vertical: screenHeight * 0.014,
-                  ),
-                  constraints: BoxConstraints(
-                    minWidth: screenWidth * 0.12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isAvailable 
-                        ? const Color(0xFF16BC00)
-                        : const Color(0xFFB00000),
-                    border: Border.all(
-                      color: isAvailable
-                          ? const Color(0xFF0D8A00)
-                          : const Color(0xFF8B0000),
-                      width: 2,
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isAvailable
-                            ? Icons.check_circle
-                            : Icons.event_busy,
-                        color: Colors.white,
-                        size: screenWidth * 0.018,
-                      ),
-                      SizedBox(width: screenWidth * 0.012),
-                      Text(
-                        isAvailable ? 'AVAILABLE' : 'OCCUPIED',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: isAvailable ? screenWidth * 0.0128 : screenWidth * 0.0142,
-                          fontFamily: 'Roboto',
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5,
-                          height: 1.0,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                  // If available, show availability range
-                  if (isAvailable && availabilityRange.isNotEmpty) ...[
-                    SizedBox(width: screenWidth * 0.02),
-                    Text(
-                      availabilityRange,
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: screenWidth * 0.01,
-                        fontFamily: 'Roboto',
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                // Instansi / Perusahaan
-                if (paraPihak != null && paraPihak!.isNotEmpty) ...[
-                  SizedBox(width: screenWidth * 0.02),
-                  Flexible(
-                    child: Container(
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
                       padding: EdgeInsets.symmetric(
-                        horizontal: screenWidth * 0.02,
-                        vertical: screenHeight * 0.008,
+                        horizontal: screenWidth * 0.025,
+                        vertical: screenHeight * 0.014,
+                      ),
+                      constraints: BoxConstraints(
+                        minWidth: screenWidth * 0.12,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white10,
+                        color: isAvailable 
+                            ? const Color(0xFF16BC00)
+                            : const Color(0xFFB00000),
                         border: Border.all(
-                          color: Colors.white30,
-                          width: 1,
+                          color: isAvailable
+                              ? const Color(0xFF0D8A00)
+                              : const Color(0xFF8B0000),
+                          width: 2,
                         ),
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(
-                        paraPihak,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: screenWidth * 0.011,
-                          fontFamily: 'Roboto',
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isAvailable
+                                ? Icons.check_circle
+                                : Icons.event_busy,
+                            color: Colors.white,
+                            size: screenWidth * 0.018,
+                          ),
+                          SizedBox(width: screenWidth * 0.012),
+                          Text(
+                            isAvailable ? 'AVAILABLE' : 'OCCUPIED',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: isAvailable ? screenWidth * 0.0128 : screenWidth * 0.0142,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                              height: 1.0,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ],
+                    // Meeting details only shown in yellow box on right
+                  ],
+                ),
+              
               ],
             );
           },
@@ -899,7 +925,8 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
           _cachedBookings = allBookings;
           _cachedTodayBookings = _filterBookingsForToday(allBookings);
           _onBookingDataChanged(allBookings);
-          debugPrint('📊 Schedule cache updated - Today bookings: ${_cachedTodayBookings?.length ?? 0}');
+          debugPrint(
+              '📊 Schedule updated: ${_cachedTodayBookings?.length ?? 0} bookings (API-first + WebSocket merge)');
         }
         
         final bookings = _cachedTodayBookings ?? [];
@@ -1052,7 +1079,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      // Meeting purpose/title
+                                      // 1. Meeting purpose/title (Judul Meeting)
                                       if (booking.purpose != null && booking.purpose!.isNotEmpty) ...[
                                         Text(
                                           booking.purpose!,
@@ -1065,14 +1092,29 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                        SizedBox(height: screenHeight * 0.004),
+                                        SizedBox(height: screenHeight * 0.006),
                                       ],
-                                      // Instansi / Perusahaan (paraPihak)
+                                      // 2. Date and Time range (Tanggal & Waktu)
+                                      Text(
+                                        _getFormattedDateAndTime(
+                                          booking.bookingDate,
+                                          booking.checkInTime,
+                                          booking.checkOutTime,
+                                        ),
+                                        style: TextStyle(
+                                          color: AppColors.primaryText,
+                                          fontSize: screenWidth * 0.012,
+                                          fontFamily: 'Roboto',
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      SizedBox(height: screenHeight * 0.008),
+                                      // 3. Para Pihak section (NO background)
                                       if (booking.paraPihak != null && booking.paraPihak!.isNotEmpty) ...[
                                         Text(
                                           booking.paraPihak!,
                                           style: TextStyle(
-                                            color: AppColors.primaryText,
+                                            color: Colors.black87,
                                             fontSize: screenWidth * 0.011,
                                             fontFamily: 'Roboto',
                                             fontWeight: FontWeight.w600,
@@ -1082,44 +1124,19 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                         ),
                                         SizedBox(height: screenHeight * 0.004),
                                       ],
-                                      // Time range
-                                      Text(
-                                        '${booking.checkInTime} - ${booking.checkOutTime}',
-                                        style: TextStyle(
-                                          color: AppColors.primaryText,
-                                          fontSize: screenWidth * 0.016,
-                                          fontFamily: 'Roboto',
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      SizedBox(height: screenHeight * 0.004),
-                                      // Booker name
-                                      Text(
-                                        booking.userName ?? 'Unknown',
-                                        style: TextStyle(
-                                          color: AppColors.primaryText,
-                                          fontSize: screenWidth * 0.013,
-                                          fontFamily: 'Roboto',
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
                                       // PIC: bookedForName · company
-                                      if (booking.bookedForName != null && booking.bookedForName!.isNotEmpty) ...[
-                                        SizedBox(height: screenHeight * 0.002),
+                                      if (booking.bookedForName != null && booking.bookedForName!.isNotEmpty)
                                         Text(
                                           'PIC: ${booking.bookedForName}${booking.bookedForCompany != null && booking.bookedForCompany!.isNotEmpty ? ' · ${booking.bookedForCompany}' : ''}',
                                           style: TextStyle(
-                                            color: AppColors.primaryText,
-                                            fontSize: screenWidth * 0.011,
+                                            color: Colors.black87,
+                                            fontSize: screenWidth * 0.0105,
                                             fontFamily: 'Roboto',
-                                            fontWeight: FontWeight.w600,
+                                            fontWeight: FontWeight.w500,
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                      ],
                                     ],
                                   ),
                                 ),
@@ -1233,6 +1250,26 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
     if (_isLoading || _isDone) {
       return;
     }
+
+    // Untuk CHECK-OUT: minta feedback DULU sebelum checkout
+    if (!widget.isCheckIn && !widget.booking.hasFeedback) {
+      // Tampilkan feedback modal terlebih dahulu
+      final feedbackSubmitted = await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => FeedbackModal(
+          booking: widget.booking,
+          onFeedbackSubmitted: () {},
+        ),
+      );
+
+      // Jika user cancel feedback, jangan lanjut checkout
+      if (!feedbackSubmitted) {
+        return;
+      }
+    }
+
+    // Setelah feedback selesai (atau tidak perlu), lanjut submit action
     setState(() => _isLoading = true);
     try {
       final now = DateTime.now();
@@ -1244,6 +1281,16 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
         actualCheckOutTime: widget.isCheckIn ? null : timeStr,
         markComplete: !widget.isCheckIn,
       );
+      
+      // Force refresh room bookings for real-time update after check-in/check-out
+      if (mounted) {
+        try {
+          await context.read<BookingProvider>().forceRefreshRoomBookings(widget.booking.roomId);
+        } catch (e) {
+          debugPrint('Warning: Force refresh failed: $e');
+        }
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1258,16 +1305,6 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
           ),
         );
         setState(() => _isDone = true);
-        if (!widget.isCheckIn && !widget.booking.hasFeedback) {
-          await showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (dialogContext) => FeedbackModal(
-              booking: widget.booking,
-              onFeedbackSubmitted: () {},
-            ),
-          );
-        }
       }
     } catch (e) {
       if (mounted) {

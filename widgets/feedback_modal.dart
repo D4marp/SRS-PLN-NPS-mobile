@@ -131,6 +131,7 @@ class _FeedbackModalState extends State<FeedbackModal> {
     // Show dedicated thank-you screen
     if (_showThankYou) {
       return Dialog(
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
@@ -195,6 +196,7 @@ class _FeedbackModalState extends State<FeedbackModal> {
     }
 
     return Dialog(
+      backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),

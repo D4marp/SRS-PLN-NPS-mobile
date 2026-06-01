@@ -123,8 +123,10 @@ class BookingModel {
       hasFeedback: json['hasFeedback'] ?? hasNestedFeedback,
       feedbackSatisfaction: nestedFeedback?['satisfactionLevel'] ?? json['feedbackSatisfaction'],
       feedbackReason: nestedFeedback?['reason'] ?? json['feedbackReason'],
-        feedbackComplaintItems: _parseFeedbackComplaintItems(nestedFeedback?['complaintItems'] ?? json['feedbackComplaintItems']),
-        feedbackComplaintOther: nestedFeedback?['complaintOther'] ?? json['feedbackComplaintOther'],
+      feedbackComplaintItems: _parseFeedbackComplaintItems(
+        nestedFeedback?['complaintItems'] ?? json['feedbackComplaintItems'],
+      ),
+      feedbackComplaintOther: nestedFeedback?['complaintOther'] ?? json['feedbackComplaintOther'],
       actualCheckInTime: json['actualCheckInTime'],
       actualCheckOutTime: json['actualCheckOutTime'],
       actualDurationMinutes: json['actualDurationMinutes'] is int
@@ -163,8 +165,8 @@ class BookingModel {
       'hasFeedback': hasFeedback,
       'feedbackSatisfaction': feedbackSatisfaction,
       'feedbackReason': feedbackReason,
-      feedbackComplaintItems: feedbackComplaintItems,
-      feedbackComplaintOther: feedbackComplaintOther,
+      'feedbackComplaintItems': feedbackComplaintItems,
+      'feedbackComplaintOther': feedbackComplaintOther,
       'actualCheckInTime': actualCheckInTime,
       'actualCheckOutTime': actualCheckOutTime,
       'actualDurationMinutes': actualDurationMinutes,

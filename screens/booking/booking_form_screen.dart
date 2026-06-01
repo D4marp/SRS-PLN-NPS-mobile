@@ -27,8 +27,9 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
   int _guestCount = 1;
   late TextEditingController _customDurationController;
   late TextEditingController _purposeController;
-  late TextEditingController _bookedForNameController;
-  late TextEditingController _bookedForCompanyController;
+  late TextEditingController _paraPihakController;
+  late TextEditingController _divisiController;
+  late TextEditingController _atasNamaController;
   bool _isBooking = false;
   late Timer _timeUpdateTimer;
 
@@ -37,8 +38,9 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
     super.initState();
     _customDurationController = TextEditingController();
     _purposeController = TextEditingController();
-    _bookedForNameController = TextEditingController();
-    _bookedForCompanyController = TextEditingController();
+    _paraPihakController = TextEditingController();
+    _divisiController = TextEditingController();
+    _atasNamaController = TextEditingController();
     
     // Set start time to current time
     final now = DateTime.now();
@@ -59,8 +61,9 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
   void dispose() {
     _customDurationController.dispose();
     _purposeController.dispose();
-    _bookedForNameController.dispose();
-    _bookedForCompanyController.dispose();
+    _paraPihakController.dispose();
+    _divisiController.dispose();
+    _atasNamaController.dispose();
     _timeUpdateTimer.cancel();
     super.dispose();
   }
@@ -164,12 +167,10 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
         checkInTime: _timeToString(_startTime),
         checkOutTime: _timeToString(endTime),
         numberOfGuests: _guestCount,
-        bookedForName: _bookedForNameController.text.trim().isNotEmpty
-            ? _bookedForNameController.text.trim()
-            : null,
-        bookedForCompany: _bookedForCompanyController.text.trim().isNotEmpty
-            ? _bookedForCompanyController.text.trim()
-            : null,
+        bookedForName: _atasNamaController.text.isNotEmpty ? _atasNamaController.text : null,
+        bookedForCompany: _paraPihakController.text.isNotEmpty ? _paraPihakController.text : null,
+        paraPihak: _paraPihakController.text.isNotEmpty ? _paraPihakController.text : null,
+        divisi: _divisiController.text.isNotEmpty ? _divisiController.text : null,
         purpose: _purposeController.text.isNotEmpty ? _purposeController.text : null,
       );
 
@@ -669,6 +670,135 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
                                 ),
                                 const SizedBox(height: AppSpacing.lg),
 
+                                // Atas Nama Section
+                                Text(
+                                  'Atas Nama',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                    fontFamily: 'Plus Jakarta Sans',
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.md),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.md,
+                                    vertical: AppSpacing.sm,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.05),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.3),
+                                      width: 1.5,
+                                    ),
+                                    borderRadius: BorderRadius.circular(11),
+                                  ),
+                                  child: TextField(
+                                    controller: _atasNamaController,
+                                    style: const TextStyle(
+                                      color: Colors.black87,
+                                      fontFamily: 'Plus Jakarta Sans',
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText: 'e.g. Amir',
+                                      hintStyle: TextStyle(
+                                        color: Colors.black.withOpacity(0.4),
+                                        fontFamily: 'Plus Jakarta Sans',
+                                      ),
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.lg),
+
+                                // Instansi / Perusahaan Section
+                                Text(
+                                  'Instansi / Perusahaan',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                    fontFamily: 'Plus Jakarta Sans',
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.md),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.md,
+                                    vertical: AppSpacing.sm,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.05),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.3),
+                                      width: 1.5,
+                                    ),
+                                    borderRadius: BorderRadius.circular(11),
+                                  ),
+                                  child: TextField(
+                                    controller: _paraPihakController,
+                                    style: const TextStyle(
+                                      color: Colors.black87,
+                                      fontFamily: 'Plus Jakarta Sans',
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText: 'e.g. PENS, Indosat',
+                                      hintStyle: TextStyle(
+                                        color: Colors.black.withOpacity(0.4),
+                                        fontFamily: 'Plus Jakarta Sans',
+                                      ),
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.lg),
+
+                                // Divisi Section
+                                Text(
+                                  'Divisi',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                    fontFamily: 'Plus Jakarta Sans',
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.md),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.md,
+                                    vertical: AppSpacing.sm,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.05),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.3),
+                                      width: 1.5,
+                                    ),
+                                    borderRadius: BorderRadius.circular(11),
+                                  ),
+                                  child: TextField(
+                                    controller: _divisiController,
+                                    style: const TextStyle(
+                                      color: Colors.black87,
+                                      fontFamily: 'Plus Jakarta Sans',
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText: 'e.g. Manager IT, Engineering',
+                                      hintStyle: TextStyle(
+                                        color: Colors.black.withOpacity(0.4),
+                                        fontFamily: 'Plus Jakarta Sans',
+                                      ),
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.lg),
+
                                 // Purpose Section
                                 Text(
                                   'Purpose (optional)',
@@ -702,80 +832,6 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
                                     ),
                                     decoration: InputDecoration(
                                       hintText: 'e.g. Meeting, Training, Class ...',
-                                      hintStyle: TextStyle(
-                                        color: Colors.black.withOpacity(0.4),
-                                        fontFamily: 'Plus Jakarta Sans',
-                                      ),
-                                      border: InputBorder.none,
-                                      isDense: true,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: AppSpacing.lg),
-
-                                // Booking recipient section
-                                Text(
-                                  'Booked For (optional)',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                    fontFamily: 'Plus Jakarta Sans',
-                                  ),
-                                ),
-                                const SizedBox(height: AppSpacing.md),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.md,
-                                    vertical: AppSpacing.sm,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.05),
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(0.3),
-                                      width: 1.5,
-                                    ),
-                                    borderRadius: BorderRadius.circular(11),
-                                  ),
-                                  child: TextField(
-                                    controller: _bookedForNameController,
-                                    style: const TextStyle(
-                                      color: Colors.black87,
-                                      fontFamily: 'Plus Jakarta Sans',
-                                    ),
-                                    decoration: InputDecoration(
-                                      hintText: 'Name of booking recipient',
-                                      hintStyle: TextStyle(
-                                        color: Colors.black.withOpacity(0.4),
-                                        fontFamily: 'Plus Jakarta Sans',
-                                      ),
-                                      border: InputBorder.none,
-                                      isDense: true,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: AppSpacing.sm),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.md,
-                                    vertical: AppSpacing.sm,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.05),
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(0.3),
-                                      width: 1.5,
-                                    ),
-                                    borderRadius: BorderRadius.circular(11),
-                                  ),
-                                  child: TextField(
-                                    controller: _bookedForCompanyController,
-                                    style: const TextStyle(
-                                      color: Colors.black87,
-                                      fontFamily: 'Plus Jakarta Sans',
-                                    ),
-                                    decoration: InputDecoration(
-                                      hintText: 'Company / organization',
                                       hintStyle: TextStyle(
                                         color: Colors.black.withOpacity(0.4),
                                         fontFamily: 'Plus Jakarta Sans',

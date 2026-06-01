@@ -28,6 +28,8 @@ class ApiBookingService {
     required int numberOfGuests,
     String? bookedForName,
     String? bookedForCompany,
+    String? paraPihak,
+    String? divisi,
     String? purpose,
   }) async {
     final resp = await _dio().post('/api/bookings', data: {
@@ -38,6 +40,8 @@ class ApiBookingService {
       'numberOfGuests': numberOfGuests,
       if (bookedForName != null && bookedForName.isNotEmpty) 'bookedForName': bookedForName,
       if (bookedForCompany != null && bookedForCompany.isNotEmpty) 'bookedForCompany': bookedForCompany,
+      if (paraPihak != null && paraPihak.isNotEmpty) 'paraPihak': paraPihak,
+      if (divisi != null && divisi.isNotEmpty) 'divisi': divisi,
       if (purpose != null && purpose.isNotEmpty) 'purpose': purpose,
     });
     return BookingModel.fromJson(

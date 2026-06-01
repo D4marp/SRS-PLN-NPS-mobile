@@ -4,6 +4,7 @@ import 'dart:async';
 import '../models/booking_model.dart';
 import '../services/api_booking_service.dart';
 import '../services/websocket_service.dart';
+import '../utils/api_config.dart';
 
 class BookingProvider extends ChangeNotifier {
   // Enabled only when running as web. Other platforms keep provider as no-op.
@@ -24,6 +25,9 @@ class BookingProvider extends ChangeNotifier {
 
   // Stream subscription management
   StreamSubscription<List<BookingModel>>? _userBookingsSubscription;
+  
+  // Cache of active stream controllers per room (for force refresh)
+  final Map<String, StreamController<List<BookingModel>>> _roomStreamControllers = {};
 
   // Getters
   List<BookingModel> get userBookings => _userBookings;
@@ -95,6 +99,8 @@ class BookingProvider extends ChangeNotifier {
     required int numberOfGuests,
     String? bookedForName,
     String? bookedForCompany,
+    String? paraPihak,
+    String? divisi,
     String? purpose,
   }) async {
     if (!_enabled) {
@@ -113,6 +119,8 @@ class BookingProvider extends ChangeNotifier {
         numberOfGuests: numberOfGuests,
         bookedForName: bookedForName,
         bookedForCompany: bookedForCompany,
+        paraPihak: paraPihak,
+        divisi: divisi,
         purpose: purpose,
       );
 
@@ -221,22 +229,148 @@ class BookingProvider extends ChangeNotifier {
     return Stream.fromFuture(ApiBookingService.getRoomBookings(roomId));
   }
 
-  /// Real-time stream of bookings for a specific room via WebSocket.
-  /// Filters all bookings from WebSocket by roomId for live updates.
+  /// Real-time stream of bookings for a specific room.
+  /// **PRIORITY: API-first architecture**
+  /// 1. Fetch bookings from API immediately (reliable, stable)
+  /// 2. Merge with WebSocket real-time updates (for live changes)
+  /// 3. Fallback to periodic API polling if WebSocket unavailable
+  ///
+  /// This ensures room schedules always display data even if WebSocket disconnects.
   Stream<List<BookingModel>> watchBookingsByRoomIdStream(String roomId) {
     if (!_enabled) {
       return Stream.value(<BookingModel>[]);
     }
-    return WebSocketService.watchBookings().map((bookings) {
-      // Filter bookings for the specific room
-      return bookings.where((booking) => booking.roomId == roomId).toList();
-    });
+
+    final controller = StreamController<List<BookingModel>>.broadcast();
+    List<BookingModel> currentData = [];
+    StreamSubscription<List<BookingModel>>? wsSubscription;
+    bool disposed = false;
+
+    // Register controller in cache for force refresh capability
+    _roomStreamControllers[roomId] = controller;
+
+    /// Merge API data with WebSocket updates (dedup by booking ID)
+    void mergeBookings(List<BookingModel> wsBookings) {
+      final wsFiltered = wsBookings.where((b) => b.roomId == roomId).toList();
+      final wsIds = wsFiltered.map((b) => b.id).toSet();
+
+      // Keep API data for IDs not in WebSocket, add WebSocket data
+      final merged = [
+        ...currentData.where((b) => !wsIds.contains(b.id)),
+        ...wsFiltered,
+      ];
+      merged.sort((a, b) => a.checkInTime.compareTo(b.checkInTime));
+
+      currentData = merged;
+      if (!controller.isClosed) controller.add(currentData);
+    }
+
+    /// Fetch initial data from API
+    Future<void> fetchInitialData() async {
+      try {
+        final bookings = await ApiBookingService.getRoomBookings(roomId);
+        if (!disposed && !controller.isClosed) {
+          currentData = bookings;
+          controller.add(currentData);
+          debugPrint('📡 [API] Initial bookings loaded: ${currentData.length} for room $roomId');
+        }
+      } catch (e) {
+        debugPrint('❌ [API] Failed to load initial bookings: $e');
+      }
+    }
+
+    /// Fallback: poll API every 3s when WebSocket is unavailable (faster updates for kiosk)
+    void setupPollingFallback() {
+      if (disposed || wsSubscription != null) return;
+
+      debugPrint('⏱️ [Polling] Starting API poll every 3s for room $roomId');
+      final pollSub = Stream.periodic(const Duration(seconds: 3)).asyncMap((_) async {
+        try {
+          return await ApiBookingService.getRoomBookings(roomId);
+        } catch (e) {
+          debugPrint('❌ [Polling] Error: $e');
+          return currentData;
+        }
+      }).listen(
+        (bookings) {
+          if (!disposed && !controller.isClosed) {
+            currentData = bookings;
+            controller.add(currentData);
+            debugPrint('🔄 [Polling] Updated: ${currentData.length} bookings');
+          }
+        },
+      );
+
+      wsSubscription = pollSub;
+    }
+
+    /// Subscribe to WebSocket for real-time updates (if token available)
+    void subscribeToWebSocket() {
+      if (ApiConfig.token == null || ApiConfig.token!.isEmpty) {
+        debugPrint('⚠️ No JWT token, WebSocket disabled. Using API polling fallback.');
+        setupPollingFallback();
+        return;
+      }
+
+      wsSubscription = WebSocketService.watchBookings().listen(
+        (wsBookings) {
+          debugPrint(
+              '🔄 [WebSocket] Received ${wsBookings.length} bookings, filtering for room $roomId');
+          mergeBookings(wsBookings);
+        },
+        onError: (error) {
+          debugPrint('⚠️ [WebSocket] Error: $error — falling back to API polling');
+          setupPollingFallback();
+        },
+        onDone: () {
+          debugPrint('⚠️ [WebSocket] Closed — falling back to API polling');
+          setupPollingFallback();
+        },
+      );
+    }
+
+    controller.onListen = () {
+      debugPrint('👂 watchBookingsByRoomIdStream listener attached for room $roomId');
+      fetchInitialData().then((_) => subscribeToWebSocket());
+    };
+
+    controller.onCancel = () {
+      disposed = true;
+      wsSubscription?.cancel();
+      _roomStreamControllers.remove(roomId);
+      debugPrint('🔌 watchBookingsByRoomIdStream listener cancelled for room $roomId');
+    };
+
+    return controller.stream;
   }
 
   // Refresh bookings
   Future<void> refreshBookings(String userId) async {
     if (!_enabled) return;
     loadUserBookings(userId);
+  }
+
+  /// Force refresh room bookings (for immediate updates after check-in/check-out)
+  Future<List<BookingModel>> forceRefreshRoomBookings(String roomId) async {
+    if (!_enabled) return [];
+    try {
+      final bookings = await ApiBookingService.getRoomBookings(roomId);
+      
+      // Emit to cached stream controller if listener is active
+      if (_roomStreamControllers.containsKey(roomId)) {
+        final controller = _roomStreamControllers[roomId];
+        if (controller != null && !controller.isClosed) {
+          controller.add(bookings);
+          debugPrint('✨ [Force Refresh] Emitted ${bookings.length} bookings to stream for room $roomId');
+        }
+      }
+      
+      debugPrint('🔄 [Force Refresh] Room $roomId: ${bookings.length} bookings updated');
+      return bookings;
+    } catch (e) {
+      debugPrint('❌ [Force Refresh] Failed: $e');
+      return [];
+    }
   }
 
   // Helper methods
@@ -321,6 +455,7 @@ class BookingProvider extends ChangeNotifier {
     String? actualCheckInTime,
     String? actualCheckOutTime,
     bool markComplete = false,
+  }) async {
     if (!_enabled) {
       debugPrint('BookingProvider: submitCheckInCheckOut skipped (not web)');
       return false;
@@ -329,7 +464,6 @@ class BookingProvider extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
-      final updatedBooking = await ApiBookingService.submitCheckInCheckOut(
       final updatedBooking = await ApiBookingService.submitCheckInCheckOut(
         bookingId: bookingId,
         actualCheckInTime: actualCheckInTime,
