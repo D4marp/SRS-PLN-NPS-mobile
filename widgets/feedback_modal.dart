@@ -35,7 +35,8 @@ const _kComplaintTags = [
 class _FeedbackModalState extends State<FeedbackModal> {
   String? _selectedSatisfaction; // "satisfied" or "unsatisfied"
   final List<String> _selectedTags = [];
-  final TextEditingController _otherComplaintController = TextEditingController();
+  final TextEditingController _otherComplaintController =
+      TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
   bool _showApology = false;
@@ -43,13 +44,14 @@ class _FeedbackModalState extends State<FeedbackModal> {
 
   void _startAutoClose() {
     Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) Navigator.of(context).pop(true);
     });
   }
 
   bool get _isReasonValid {
     if (_selectedSatisfaction == 'unsatisfied') {
-      return _selectedTags.isNotEmpty || _otherComplaintController.text.trim().isNotEmpty;
+      return _selectedTags.isNotEmpty ||
+          _otherComplaintController.text.trim().isNotEmpty;
     }
     return true;
   }
@@ -171,7 +173,7 @@ class _FeedbackModalState extends State<FeedbackModal> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => Navigator.of(context).pop(true),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.successGreen,
                   ),
@@ -211,7 +213,8 @@ class _FeedbackModalState extends State<FeedbackModal> {
                 'Kepuasan Layanan',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.bold,
-                      color: AppColors.primaryRed,
+                      fontSize: 30,
+                      color: AppColors.primaryText,
                     ),
               ),
               const SizedBox(height: AppSpacing.md),
@@ -228,7 +231,6 @@ class _FeedbackModalState extends State<FeedbackModal> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // Satisfied button
                   GestureDetector(
                     onTap: _isLoading
                         ? null
@@ -239,31 +241,47 @@ class _FeedbackModalState extends State<FeedbackModal> {
                             });
                             _submitFeedback(keepOpen: false);
                           },
-                    child: Container(
-                      width: 160,
-                      height: 160,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _selectedSatisfaction == 'satisfied'
-                              ? AppColors.successGreen
-                              : AppColors.borderColor,
-                          width: _selectedSatisfaction == 'satisfied' ? 3 : 2,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 210,
+                          height: 210,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: _selectedSatisfaction == 'satisfied'
+                                  ? AppColors.successGreen
+                                  : AppColors.borderColor,
+                              width:
+                                  _selectedSatisfaction == 'satisfied' ? 3 : 2,
+                            ),
+                            color: _selectedSatisfaction == 'satisfied'
+                                ? AppColors.successGreenLight
+                                : Colors.transparent,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Assets.images.puas.image(
+                              width: 165,
+                              height: 165,
+                            ),
+                          ),
                         ),
-                        color: _selectedSatisfaction == 'satisfied'
-                            ? AppColors.successGreenLight
-                            : Colors.transparent,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: Assets.images.puas.image(
-                          width: 120,
-                          height: 120,
+                        const SizedBox(height: 8),
+                        Text(
+                          'Puas',
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.primaryText,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 20,
+                                  ),
+                          textAlign: TextAlign.center,
                         ),
-                      ),
+                      ],
                     ),
                   ),
-                  // Unsatisfied button
                   GestureDetector(
                     onTap: _isLoading
                         ? null
@@ -273,28 +291,46 @@ class _FeedbackModalState extends State<FeedbackModal> {
                               _showApology = false;
                             });
                           },
-                    child: Container(
-                      width: 200,
-                      height: 200,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _selectedSatisfaction == 'unsatisfied'
-                              ? AppColors.errorRed
-                              : AppColors.borderColor,
-                          width: _selectedSatisfaction == 'unsatisfied' ? 3 : 2,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 210,
+                          height: 210,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: _selectedSatisfaction == 'unsatisfied'
+                                  ? AppColors.errorRed
+                                  : AppColors.borderColor,
+                              width: _selectedSatisfaction == 'unsatisfied'
+                                  ? 3
+                                  : 2,
+                            ),
+                            color: _selectedSatisfaction == 'unsatisfied'
+                                ? AppColors.errorRedLight
+                                : Colors.transparent,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Assets.images.kurangPuas.image(
+                              width: 165,
+                              height: 165,
+                            ),
+                          ),
                         ),
-                        color: _selectedSatisfaction == 'unsatisfied'
-                            ? AppColors.errorRedLight
-                            : Colors.transparent,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: Assets.images.kurangPuas.image(
-                          width: 160,
-                          height: 160,
+                        const SizedBox(height: 8),
+                        Text(
+                          'Tidak Puas',
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.primaryText,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 20,
+                                  ),
+                          textAlign: TextAlign.center,
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ],
@@ -304,7 +340,8 @@ class _FeedbackModalState extends State<FeedbackModal> {
               // If satisfaction selected, show reason text area
               if (_selectedSatisfaction != null) ...[
                 // Complaint tags (only for unsatisfied)
-                if (_selectedSatisfaction == 'unsatisfied' && !_showApology) ...[
+                if (_selectedSatisfaction == 'unsatisfied' &&
+                    !_showApology) ...[
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
@@ -349,12 +386,17 @@ class _FeedbackModalState extends State<FeedbackModal> {
                         selectedColor: AppColors.errorRedLight,
                         checkmarkColor: AppColors.errorRed,
                         labelStyle: TextStyle(
-                          color: selected ? AppColors.errorRed : AppColors.primaryText,
-                          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                          color: selected
+                              ? AppColors.errorRed
+                              : AppColors.primaryText,
+                          fontWeight:
+                              selected ? FontWeight.w600 : FontWeight.normal,
                           fontSize: 12,
                         ),
                         side: BorderSide(
-                          color: selected ? AppColors.errorRed : AppColors.borderColor,
+                          color: selected
+                              ? AppColors.errorRed
+                              : AppColors.borderColor,
                           width: selected ? 1.5 : 1,
                         ),
                         backgroundColor: AppColors.creamBackground,
@@ -377,15 +419,18 @@ class _FeedbackModalState extends State<FeedbackModal> {
                       fillColor: Colors.white,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.borderColor),
+                        borderSide:
+                            const BorderSide(color: AppColors.borderColor),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.borderColor),
+                        borderSide:
+                            const BorderSide(color: AppColors.borderColor),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.primaryRed, width: 1.5),
+                        borderSide: const BorderSide(
+                            color: AppColors.primaryRed, width: 1.5),
                       ),
                     ),
                   ),
@@ -461,7 +506,7 @@ class _FeedbackModalState extends State<FeedbackModal> {
                       Expanded(
                         child: ElevatedButton(
                           onPressed: _showApology
-                              ? () => Navigator.of(context).pop()
+                              ? () => Navigator.of(context).pop(true)
                               : (_canSubmit
                                   ? () => _submitFeedback(keepOpen: true)
                                   : null),
@@ -488,23 +533,21 @@ class _FeedbackModalState extends State<FeedbackModal> {
                       ),
                     ],
                   ),
-              ] else
-                ...[
-                  Text(
-                    'Pilih salah satu untuk lanjut',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppColors.secondaryText,
-                          fontStyle: FontStyle.italic,
-                        ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  OutlinedButton(
-                    onPressed: _isLoading
-                        ? null
-                        : () => Navigator.of(context).pop(),
-                    child: const Text('Tutup'),
-                  ),
-                ],
+              ] else ...[
+                Text(
+                  'Pilih salah satu untuk lanjut',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.secondaryText,
+                        fontStyle: FontStyle.italic,
+                      ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                OutlinedButton(
+                  onPressed:
+                      _isLoading ? null : () => Navigator.of(context).pop(true),
+                  child: const Text('Tutup'),
+                ),
+              ],
             ],
           ),
         ),

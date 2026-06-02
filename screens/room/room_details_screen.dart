@@ -17,7 +17,7 @@ import '../../widgets/feedback_modal.dart';
 class BookingUpdateEvent {
   final List<BookingModel> bookings;
   final DateTime timestamp;
-  
+
   BookingUpdateEvent({
     required this.bookings,
     required this.timestamp,
@@ -42,12 +42,12 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
   late Timer _timeUpdateTimer;
   late ValueNotifier<DateTime> _timeNotifier;
   late StreamController<BookingUpdateEvent> _bookingEventController;
-  
+
   // Cache untuk menghindari rebuild berlebihan
   List<BookingModel>? _cachedBookings;
   List<BookingModel>? _cachedTodayBookings;
   DateTime? _lastBookingUpdateTime;
-  
+
   @override
   void initState() {
     super.initState();
@@ -56,16 +56,17 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
-    
+
     debugPrint('🚀 RoomDetailsScreen initState: Room ID = ${widget.room.id}');
-    debugPrint('🔥 Using API-FIRST architecture with WebSocket real-time updates!');
-    
+    debugPrint(
+        '🔥 Using API-FIRST architecture with WebSocket real-time updates!');
+
     // Initialize time notifier
     _timeNotifier = ValueNotifier<DateTime>(DateTime.now());
-    
+
     // Initialize booking event controller
     _bookingEventController = StreamController<BookingUpdateEvent>.broadcast();
-    
+
     // Update time every 1 second for smooth real-time clock display
     _timeUpdateTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
@@ -92,19 +93,26 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
 
   // Helper untuk check apakah data booking berubah
   bool _hasBookingsChanged(List<BookingModel> newBookings) {
-    if (_cachedBookings == null || newBookings.length != _cachedBookings!.length) {
+    if (_cachedBookings == null ||
+        newBookings.length != _cachedBookings!.length) {
       return true;
     }
-    
+
     // Check setiap booking untuk perubahan
     for (int i = 0; i < newBookings.length; i++) {
       if (newBookings[i].id != _cachedBookings![i].id ||
           newBookings[i].status != _cachedBookings![i].status ||
-          newBookings[i].checkInTime != _cachedBookings![i].checkInTime) {
+          newBookings[i].checkInTime != _cachedBookings![i].checkInTime ||
+          newBookings[i].checkOutTime != _cachedBookings![i].checkOutTime ||
+          newBookings[i].actualCheckInTime !=
+              _cachedBookings![i].actualCheckInTime ||
+          newBookings[i].actualCheckOutTime !=
+              _cachedBookings![i].actualCheckOutTime ||
+          newBookings[i].hasFeedback != _cachedBookings![i].hasFeedback) {
         return true;
       }
     }
-    
+
     return false;
   }
 
@@ -127,24 +135,153 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
+  String _getBookingStatusText(BookingModel booking, DateTime currentTime) {
+    final bookingStart = _parseTimeOnDate(
+      booking.bookingDate,
+      booking.checkInTime,
+    );
+    final bookingEnd = _parseTimeOnDate(
+      booking.bookingDate,
+      booking.checkOutTime,
+    );
+    final actualStart = _parseTimeOnDate(
+      booking.bookingDate,
+      booking.actualCheckInTime,
+    );
+    final actualEnd = _parseTimeOnDate(
+      booking.bookingDate,
+      booking.actualCheckOutTime,
+    );
+
+    if (bookingStart == null || bookingEnd == null) {
+      return 'Invalid Time';
+    }
+
+    if (actualEnd != null &&
+        (currentTime.isAfter(actualEnd) ||
+            currentTime.isAtSameMomentAs(actualEnd))) {
+      return 'Completed';
+    }
+
+    if (actualStart != null) {
+      if (currentTime.isAfter(actualStart) ||
+          currentTime.isAtSameMomentAs(actualStart)) {
+        return actualEnd == null ? 'Awaiting Check-out' : 'Ongoing';
+      }
+      if (currentTime.isBefore(actualStart)) {
+        return 'Upcoming';
+      }
+    }
+
+    if (currentTime.isBefore(bookingStart)) {
+      return 'Upcoming';
+    }
+    if (currentTime.isAfter(bookingEnd)) {
+      return 'Completed';
+    }
+    return 'Ongoing';
+  }
+
+  bool _isActiveScheduleStatus(String statusText) {
+    return statusText == 'Ongoing' ||
+        statusText == 'Awaiting Check-out' ||
+        statusText == 'Upcoming';
+  }
+
+  bool _shouldShowBookingInSchedule(
+    BookingModel booking,
+    DateTime currentTime,
+  ) {
+    if (booking.status == BookingStatus.completed ||
+        booking.status == BookingStatus.cancelled ||
+        booking.status == BookingStatus.rejected) {
+      return false;
+    }
+
+    return _isActiveScheduleStatus(
+      _getBookingStatusText(booking, currentTime),
+    );
+  }
+
+  bool _isOngoingForRoomStatus(
+    BookingModel booking,
+    DateTime currentTime,
+  ) {
+    final statusText = _getBookingStatusText(booking, currentTime);
+    return _shouldShowBookingInSchedule(booking, currentTime) &&
+        (statusText == 'Ongoing' || statusText == 'Awaiting Check-out');
+  }
+
+  int _schedulePriority(String statusText) {
+    switch (statusText) {
+      case 'Ongoing':
+        return 0;
+      case 'Awaiting Check-out':
+        return 1;
+      case 'Upcoming':
+        return 2;
+      default:
+        return 3;
+    }
+  }
+
   String _formatTimeForDisplay(String? time) {
     if (time == null || time.isEmpty) {
       return '';
     }
     return time.replaceAll(':', '.');
   }
-  
+
   String _getFormattedDate(DateTime time) {
-    final days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
-    final months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    final days = [
+      'Senin',
+      'Selasa',
+      'Rabu',
+      'Kamis',
+      'Jumat',
+      'Sabtu',
+      'Minggu'
+    ];
+    final months = [
+      'Januari',
+      'Februari',
+      'Maret',
+      'April',
+      'Mei',
+      'Juni',
+      'Juli',
+      'Agustus',
+      'September',
+      'Oktober',
+      'November',
+      'Desember'
+    ];
     return '${days[time.weekday - 1]}, ${time.day} ${months[time.month - 1]} ${time.year}';
   }
 
-  String _getFormattedDateAndTime(DateTime date, String? checkInTime, String? checkOutTime) {
+  String _getFormattedDateAndTime(
+      DateTime date, String? checkInTime, String? checkOutTime) {
     final dateStr = _getFormattedDate(date);
     final timeStart = checkInTime?.replaceAll(':', '.') ?? '';
     final timeEnd = checkOutTime?.replaceAll(':', '.') ?? '';
     return '$dateStr $timeStart - $timeEnd';
+  }
+
+  String? _formatPihakLine(BookingModel booking) {
+    final pihak1 = booking.pihak1?.trim();
+    final pihak2 = booking.pihak2?.trim();
+
+    if ((pihak1 == null || pihak1.isEmpty) &&
+        (pihak2 == null || pihak2.isEmpty)) {
+      return null;
+    }
+    if (pihak1 == null || pihak1.isEmpty) {
+      return 'Pihak 2: $pihak2';
+    }
+    if (pihak2 == null || pihak2.isEmpty) {
+      return 'Pihak 1: $pihak1';
+    }
+    return '$pihak1 dengan $pihak2';
   }
 
   DateTime? _parseTimeOnDate(DateTime date, String? time) {
@@ -203,7 +340,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
 
     return 'Tidak ada rapat berjalan';
   }
-  
+
   // Event-driven method: dipanggil hanya saat booking data berubah
   void _onBookingDataChanged(List<BookingModel> bookings) {
     _lastBookingUpdateTime = DateTime.now();
@@ -218,7 +355,8 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
         // Check if user has Bookings role - ONLY Bookings role allowed
-        if (authProvider.userModel == null || authProvider.userModel?.role != UserRole.booking) {
+        if (authProvider.userModel == null ||
+            authProvider.userModel?.role != UserRole.booking) {
           return Scaffold(
             body: Container(
               color: Colors.white,
@@ -234,11 +372,12 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                     const SizedBox(height: 24),
                     Text(
                       'Access Denied',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primaryText,
-                            fontSize: 28,
-                          ),
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primaryText,
+                                fontSize: 28,
+                              ),
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -263,7 +402,8 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      child: const Text('Go Back', style: TextStyle(fontSize: 16)),
+                      child:
+                          const Text('Go Back', style: TextStyle(fontSize: 16)),
                     ),
                   ],
                 ),
@@ -289,7 +429,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                     fit: BoxFit.cover,
                   ),
                 ),
-                
+
                 // Main Content
                 SafeArea(
                   child: _buildMainContent(),
@@ -346,7 +486,8 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                   child: Icon(
                                     Icons.meeting_room,
                                     size: screenWidth * 0.06,
-                                    color: AppColors.secondaryText.withOpacity(0.7),
+                                    color: AppColors.secondaryText
+                                        .withOpacity(0.7),
                                   ),
                                 ),
                               );
@@ -357,11 +498,14 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                 color: Colors.white.withOpacity(0.1),
                                 child: Center(
                                   child: CircularProgressIndicator(
-                                    value: loadingProgress.expectedTotalBytes != null
-                                        ? loadingProgress.cumulativeBytesLoaded /
+                                    value: loadingProgress.expectedTotalBytes !=
+                                            null
+                                        ? loadingProgress
+                                                .cumulativeBytesLoaded /
                                             loadingProgress.expectedTotalBytes!
                                         : null,
-                                    valueColor: const AlwaysStoppedAnimation<Color>(
+                                    valueColor:
+                                        const AlwaysStoppedAnimation<Color>(
                                       AppColors.secondaryText,
                                     ),
                                   ),
@@ -423,9 +567,9 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Facilities',
+                      'Capacity:',
                       style: TextStyle(
-                         color: Colors.white,
+                        color: Colors.white,
                         fontSize: screenWidth * 0.0125,
                         fontFamily: 'Roboto',
                         fontWeight: FontWeight.w600,
@@ -507,63 +651,61 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                 BookingModel? ongoingBooking;
 
                                 if (snapshot.hasData && snapshot.data != null) {
-                                  final todayBookings =
-                                      _filterBookingsForToday(snapshot.data ?? []);
+                                  final todayBookings = _filterBookingsForToday(
+                                      snapshot.data ?? []);
                                   for (final booking in todayBookings) {
-                                    final bookingStart = _parseTimeOnDate(
-                                      booking.bookingDate,
-                                      booking.checkInTime,
-                                    );
-                                    final bookingEnd = _parseTimeOnDate(
-                                      booking.bookingDate,
-                                      booking.checkOutTime,
-                                    );
-
-                                    if (bookingStart == null || bookingEnd == null) {
-                                      continue;
-                                    }
-
-                                    final isAfterStart =
-                                        currentTime.isAfter(bookingStart) ||
-                                            currentTime.isAtSameMomentAs(bookingStart);
-                                    final isBeforeEnd =
-                                        currentTime.isBefore(bookingEnd) ||
-                                            currentTime.isAtSameMomentAs(bookingEnd);
-
-                                    if (isAfterStart && isBeforeEnd) {
+                                    if (_isOngoingForRoomStatus(
+                                      booking,
+                                      currentTime,
+                                    )) {
                                       ongoingBooking = booking;
                                       break;
                                     }
                                   }
                                 }
 
-                                final hasOngoingMeeting = ongoingBooking != null;
+                                final hasOngoingMeeting =
+                                    ongoingBooking != null;
 
                                 // When there's no ongoing meeting, compute availability
                                 // range until next booking today (or 24.00) and show it
                                 // in the yellow header text (as requested).
                                 String availabilityHeader = '';
-                                if (!hasOngoingMeeting && snapshot.hasData && snapshot.data != null) {
-                                  final todayBookings = _filterBookingsForToday(snapshot.data!);
+                                if (!hasOngoingMeeting &&
+                                    snapshot.hasData &&
+                                    snapshot.data != null) {
+                                  final todayBookings =
+                                      _filterBookingsForToday(snapshot.data!);
                                   DateTime? nextStart;
                                   for (var b in todayBookings) {
-                                    final start = _parseTimeOnDate(b.bookingDate, b.checkInTime);
-                                    if (start != null && start.isAfter(currentTime)) {
-                                      if (nextStart == null || start.isBefore(nextStart)) {
+                                    if (!_shouldShowBookingInSchedule(
+                                      b,
+                                      currentTime,
+                                    )) {
+                                      continue;
+                                    }
+                                    final start = _parseTimeOnDate(
+                                        b.bookingDate, b.checkInTime);
+                                    if (start != null &&
+                                        start.isAfter(currentTime)) {
+                                      if (nextStart == null ||
+                                          start.isBefore(nextStart)) {
                                         nextStart = start;
                                       }
                                     }
                                   }
                                   final now = currentTime;
-                                  final startStr = '${now.hour.toString().padLeft(2,'0')}.${now.minute.toString().padLeft(2,'0')}';
+                                  final startStr =
+                                      '${now.hour.toString().padLeft(2, '0')}.${now.minute.toString().padLeft(2, '0')}';
                                   final endStr = nextStart != null
-                                      ? '${nextStart.hour.toString().padLeft(2,'0')}.${nextStart.minute.toString().padLeft(2,'0')}'
+                                      ? '${nextStart.hour.toString().padLeft(2, '0')}.${nextStart.minute.toString().padLeft(2, '0')}'
                                       : '24.00';
                                   availabilityHeader = '$startStr - $endStr';
                                 }
 
                                 final meetingTitle = hasOngoingMeeting
-                                    ? (ongoingBooking!.purpose?.isNotEmpty == true
+                                    ? (ongoingBooking!.purpose?.isNotEmpty ==
+                                            true
                                         ? ongoingBooking!.purpose!
                                         : 'Rapat')
                                     : (availabilityHeader.isNotEmpty
@@ -572,15 +714,16 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                 final meetingScheduleLine = hasOngoingMeeting
                                     ? '${_getFormattedDate(ongoingBooking!.bookingDate)} ${_formatTimeForDisplay(ongoingBooking!.checkInTime)} - ${_formatTimeForDisplay(ongoingBooking!.checkOutTime)}'
                                     : _getFormattedDate(currentTime);
-                                final meetingParaPihak = hasOngoingMeeting
-                                    ? ongoingBooking!.paraPihak
+                                final meetingPihakLine = hasOngoingMeeting
+                                    ? _formatPihakLine(ongoingBooking!)
                                     : null;
-                                    final meetingBookedForName = hasOngoingMeeting
-    ? ongoingBooking!.bookedForName
-    : null;
-final meetingBookedForCompany = hasOngoingMeeting
-    ? ongoingBooking!.bookedForCompany
-    : null;
+                                final meetingBookedForName = hasOngoingMeeting
+                                    ? ongoingBooking!.bookedForName
+                                    : null;
+                                final meetingBookedForCompany =
+                                    hasOngoingMeeting
+                                        ? ongoingBooking!.bookedForCompany
+                                        : null;
 
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -588,7 +731,8 @@ final meetingBookedForCompany = hasOngoingMeeting
                                     Text(
                                       meetingTitle,
                                       style: TextStyle(
-                                        color: const Color(0xFFEFE62F), // Golden yellow
+                                        color: const Color(
+                                            0xFFEFE62F), // Golden yellow
                                         fontSize: screenWidth * 0.03,
                                         fontFamily: 'Roboto',
                                         fontWeight: FontWeight.w700,
@@ -607,33 +751,20 @@ final meetingBookedForCompany = hasOngoingMeeting
                                       ),
                                     ),
                                     SizedBox(height: screenHeight * 0.003),
-                                    if (meetingParaPihak != null && meetingParaPihak.isNotEmpty) ...[
+                                    if (meetingPihakLine != null &&
+                                        meetingPihakLine.isNotEmpty) ...[
                                       Text(
-                                        meetingParaPihak,
+                                        meetingPihakLine,
                                         style: TextStyle(
-                                          color: Colors.white70,
+                                          color: const Color(0xFFEFE62F),
                                           fontSize: screenWidth * 0.012,
                                           fontFamily: 'Roboto',
-                                          fontWeight: FontWeight.w600,
+                                          fontWeight: FontWeight.w700,
                                         ),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ],
-                                    if (meetingBookedForName != null && meetingBookedForName.isNotEmpty) ...[
-  SizedBox(height: screenHeight * 0.003),
-  Text(
-    ' $meetingBookedForName${meetingBookedForCompany != null && meetingBookedForCompany.isNotEmpty ? ' · $meetingBookedForCompany' : ''}',
-    style: TextStyle(
-      color: Colors.white70,
-      fontSize: screenWidth * 0.011,
-      fontFamily: 'Roboto',
-      fontWeight: FontWeight.w500,
-    ),
-    maxLines: 1,
-    overflow: TextOverflow.ellipsis,
-  ),
-],
                                   ],
                                 );
                               },
@@ -676,11 +807,11 @@ final meetingBookedForCompany = hasOngoingMeeting
   }
 
   Widget _buildFacilitiesSection(double screenWidth, double screenHeight) {
-    final amenities = widget.room.amenities
-        .where((item) => item.trim().isNotEmpty)
-        .toList();
+    final amenities =
+        widget.room.amenities.where((item) => item.trim().isNotEmpty).toList();
 
-    if (widget.room.hasAC && !amenities.any((a) => a.toLowerCase().contains('ac'))) {
+    if (widget.room.hasAC &&
+        !amenities.any((a) => a.toLowerCase().contains('ac'))) {
       amenities.insert(0, 'AC');
     }
 
@@ -734,62 +865,50 @@ final meetingBookedForCompany = hasOngoingMeeting
     final key = value.toLowerCase();
     if (key.contains('ac') || key.contains('air')) return Icons.ac_unit;
     if (key.contains('projector') || key.contains('proyektor')) return Icons.tv;
-    if (key.contains('whiteboard') || key.contains('board')) return Icons.border_color;
-    if (key.contains('interactive') || key.contains('panel')) return Icons.touch_app;
-    if (key.contains('video') || key.contains('conference')) return Icons.videocam;
+    if (key.contains('whiteboard') || key.contains('board'))
+      return Icons.border_color;
+    if (key.contains('interactive') || key.contains('panel'))
+      return Icons.touch_app;
+    if (key.contains('video') || key.contains('conference'))
+      return Icons.videocam;
     if (key.contains('speaker')) return Icons.volume_up;
     if (key.contains('wifi') || key.contains('internet')) return Icons.wifi;
     if (key.contains('hdmi')) return Icons.cable;
     if (key.contains('tv')) return Icons.tv;
-    if (key.contains('pantry') || key.contains('coffee')) return Icons.local_cafe;
+    if (key.contains('pantry') || key.contains('coffee'))
+      return Icons.local_cafe;
     return Icons.check_circle;
   }
 
   Widget _buildAvailabilityStatus(double screenWidth, double screenHeight) {
     return StreamBuilder<List<BookingModel>>(
-      stream: context.read<BookingProvider>().watchBookingsByRoomIdStream(widget.room.id),
+      stream: context
+          .read<BookingProvider>()
+          .watchBookingsByRoomIdStream(widget.room.id),
       builder: (context, snapshot) {
         return ValueListenableBuilder<DateTime>(
           valueListenable: _timeNotifier,
           builder: (context, currentTime, _) {
             bool isAvailable = true;
             String? ongoingMeetingTitle;
-            String? paraPihak;
+            String? pihakLine;
             String? ongoingBookedForName;
             String? ongoingBookedForCompany;
             String? ongoingDateTimeStr;
-            
+
             String availabilityRange = '';
             if (snapshot.hasData && snapshot.data != null) {
               // Filter bookings for today only
               final todayBookings = _filterBookingsForToday(snapshot.data!);
-              
+
               // Check if there's any ongoing booking
               for (var booking in todayBookings) {
                 try {
-                  final bookingStart = _parseTimeOnDate(
-                    booking.bookingDate,
-                    booking.checkInTime,
-                  );
-                  final bookingEnd = _parseTimeOnDate(
-                    booking.bookingDate,
-                    booking.checkOutTime,
-                  );
-                  if (bookingStart == null || bookingEnd == null) {
-                    continue;
-                  }
-
-                  final isAfterStart = currentTime.isAfter(bookingStart) ||
-                      currentTime.isAtSameMomentAs(bookingStart);
-                  final isBeforeEnd = currentTime.isBefore(bookingEnd) ||
-                      currentTime.isAtSameMomentAs(bookingEnd);
-                  final isOngoing = isAfterStart && isBeforeEnd;
-
-                  if (isOngoing) {
+                  if (_isOngoingForRoomStatus(booking, currentTime)) {
                     isAvailable = false;
                     // Get meeting title from purpose field
                     ongoingMeetingTitle = booking.purpose ?? 'Meeting';
-                    paraPihak = booking.paraPihak;
+                    pihakLine = _formatPihakLine(booking);
                     ongoingBookedForName = booking.bookedForName;
                     ongoingBookedForCompany = booking.bookedForCompany;
                     ongoingDateTimeStr = _getFormattedDateAndTime(
@@ -808,22 +927,26 @@ final meetingBookedForCompany = hasOngoingMeeting
               if (isAvailable) {
                 DateTime? nextStart;
                 for (var b in todayBookings) {
+                  if (!_shouldShowBookingInSchedule(b, currentTime)) {
+                    continue;
+                  }
                   final start = _parseTimeOnDate(b.bookingDate, b.checkInTime);
-                  if (start != null && start.isAfter(DateTime.now())) {
+                  if (start != null && start.isAfter(currentTime)) {
                     if (nextStart == null || start.isBefore(nextStart)) {
                       nextStart = start;
                     }
                   }
                 }
-                final now = DateTime.now();
-                final startStr = '${now.hour.toString().padLeft(2,'0')}.${now.minute.toString().padLeft(2,'0')}';
+                final now = currentTime;
+                final startStr =
+                    '${now.hour.toString().padLeft(2, '0')}.${now.minute.toString().padLeft(2, '0')}';
                 final endStr = nextStart != null
-                    ? '${nextStart.hour.toString().padLeft(2,'0')}.${nextStart.minute.toString().padLeft(2,'0')}'
+                    ? '${nextStart.hour.toString().padLeft(2, '0')}.${nextStart.minute.toString().padLeft(2, '0')}'
                     : '24.00';
                 availabilityRange = '$startStr - $endStr';
               }
             }
-            
+
             return Row(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -841,7 +964,7 @@ final meetingBookedForCompany = hasOngoingMeeting
                         minWidth: screenWidth * 0.12,
                       ),
                       decoration: BoxDecoration(
-                        color: isAvailable 
+                        color: isAvailable
                             ? const Color(0xFF16BC00)
                             : const Color(0xFFB00000),
                         border: Border.all(
@@ -856,9 +979,7 @@ final meetingBookedForCompany = hasOngoingMeeting
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            isAvailable
-                                ? Icons.check_circle
-                                : Icons.event_busy,
+                            isAvailable ? Icons.check_circle : Icons.event_busy,
                             color: Colors.white,
                             size: screenWidth * 0.018,
                           ),
@@ -867,7 +988,9 @@ final meetingBookedForCompany = hasOngoingMeeting
                             isAvailable ? 'AVAILABLE' : 'OCCUPIED',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: isAvailable ? screenWidth * 0.0128 : screenWidth * 0.0142,
+                              fontSize: isAvailable
+                                  ? screenWidth * 0.0128
+                                  : screenWidth * 0.0142,
                               fontFamily: 'Roboto',
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.5,
@@ -880,7 +1003,6 @@ final meetingBookedForCompany = hasOngoingMeeting
                     // Meeting details only shown in yellow box on right
                   ],
                 ),
-              
               ],
             );
           },
@@ -892,9 +1014,9 @@ final meetingBookedForCompany = hasOngoingMeeting
   Widget _buildScheduleList() {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
-    
+
     final bookingProvider = context.watch<BookingProvider>();
-    
+
     return StreamBuilder<List<BookingModel>>(
       stream: bookingProvider.watchBookingsByRoomIdStream(widget.room.id),
       builder: (context, snapshot) {
@@ -905,7 +1027,7 @@ final meetingBookedForCompany = hasOngoingMeeting
             ),
           );
         }
-        
+
         if (snapshot.hasError) {
           return Center(
             child: Text(
@@ -917,9 +1039,9 @@ final meetingBookedForCompany = hasOngoingMeeting
             ),
           );
         }
-        
+
         final allBookings = snapshot.data ?? [];
-        
+
         // Update cache only if data actually changed
         if (_hasBookingsChanged(allBookings)) {
           _cachedBookings = allBookings;
@@ -928,17 +1050,38 @@ final meetingBookedForCompany = hasOngoingMeeting
           debugPrint(
               '📊 Schedule updated: ${_cachedTodayBookings?.length ?? 0} bookings (API-first + WebSocket merge)');
         }
-        
+
         final bookings = _cachedTodayBookings ?? [];
-        
+
         // Wrap dengan ValueListenableBuilder untuk status updates tanpa rebuild data
         return ValueListenableBuilder<DateTime>(
           valueListenable: _timeNotifier,
           builder: (context, currentTime, _) {
+            final visibleBookings = bookings
+                .where(
+                  (booking) => _shouldShowBookingInSchedule(
+                    booking,
+                    currentTime,
+                  ),
+                )
+                .toList()
+              ..sort((a, b) {
+                final statusA = _getBookingStatusText(a, currentTime);
+                final statusB = _getBookingStatusText(b, currentTime);
+                final priorityCompare = _schedulePriority(statusA)
+                    .compareTo(_schedulePriority(statusB));
+                if (priorityCompare != 0) return priorityCompare;
+
+                final startA = _parseTimeOnDate(a.bookingDate, a.checkInTime);
+                final startB = _parseTimeOnDate(b.bookingDate, b.checkInTime);
+                if (startA == null || startB == null) return 0;
+                return startA.compareTo(startB);
+              });
+
             return Stack(
               children: [
                 // Bookings List
-                bookings.isEmpty
+                visibleBookings.isEmpty
                     ? Center(
                         child: Text(
                           'No bookings for today',
@@ -950,114 +1093,52 @@ final meetingBookedForCompany = hasOngoingMeeting
                         ),
                       )
                     : ListView.builder(
-                        itemCount: bookings.length,
+                        itemCount: visibleBookings.length,
                         padding: EdgeInsets.only(bottom: screenHeight * 0.15),
                         physics: const AlwaysScrollableScrollPhysics(),
                         itemBuilder: (context, index) {
-                          final booking = bookings[index];
-                          
+                          final booking = visibleBookings[index];
+
                           // Determine booking status based on currentTime
                           Color borderColor;
                           Color statusBgColor;
-                          String statusText;
                           Color statusTextColor;
-                          
-                          final bookingStart = _parseTimeOnDate(
-                            booking.bookingDate,
-                            booking.checkInTime,
-                          );
-                          final bookingEnd = _parseTimeOnDate(
-                            booking.bookingDate,
-                            booking.checkOutTime,
-                          );
-                          final actualStart = _parseTimeOnDate(
-                            booking.bookingDate,
-                            booking.actualCheckInTime,
-                          );
-                          final actualEnd = _parseTimeOnDate(
-                            booking.bookingDate,
-                            booking.actualCheckOutTime,
-                          );
 
-                          if (bookingStart == null || bookingEnd == null) {
+                          final statusText =
+                              _getBookingStatusText(booking, currentTime);
+
+                          if (statusText == 'Invalid Time') {
                             borderColor = AppColors.secondaryText;
                             statusBgColor = AppColors.borderColorDark;
-                            statusText = 'Invalid Time';
                             statusTextColor = AppColors.primaryText;
-                          } else if ((currentTime.isAfter(bookingStart) ||
-                                  currentTime.isAtSameMomentAs(bookingStart)) &&
-                              (currentTime.isBefore(bookingEnd) ||
-                                  currentTime.isAtSameMomentAs(bookingEnd))) {
-                            // Occupied during scheduled booking time.
+                          } else if (statusText == 'Ongoing') {
                             borderColor = const Color(0xFFFF0000);
                             statusBgColor = const Color(0xFFFF0000);
-                            statusText = 'Ongoing';
                             statusTextColor = Colors.white;
-                          } else if (actualStart != null) {
-                            if (actualEnd != null && currentTime.isAfter(actualEnd)) {
-                              // Completed after check-out
-                              borderColor = AppColors.warningYellow;
-                              statusBgColor = AppColors.warningYellow;
-                              statusText = 'Completed';
-                              statusTextColor = Colors.black;
-                            } else if (currentTime.isAfter(actualStart)) {
-                              if (actualEnd == null) {
-                                // Must submit actual check-out first before completion.
-                                borderColor = const Color(0xFFFF0000);
-                                statusBgColor = const Color(0xFFFF0000);
-                                statusText = 'Awaiting Check-out';
-                                statusTextColor = Colors.white;
-                              } else {
-                                // Between check-in and check-out window.
-                                borderColor = const Color(0xFFFF0000);
-                                statusBgColor = const Color(0xFFFF0000);
-                                statusText = 'Ongoing';
-                                statusTextColor = Colors.white;
-                              }
-                            } else if (currentTime.isBefore(actualStart)) {
-                              // Upcoming (check-in set in the future)
-                              borderColor = const Color(0xFF16BC00);
-                              statusBgColor = const Color(0xFF129E00);
-                              statusText = 'Upcoming';
-                              statusTextColor = Colors.white;
-                            } else {
-                              // Ongoing only after check-in
-                              borderColor = const Color(0xFFFF0000);
-                              statusBgColor = const Color(0xFFFF0000);
-                              statusText = 'Ongoing';
-                              statusTextColor = Colors.white;
-                            }
-                          } else if (currentTime.isBefore(bookingStart)) {
-                            // Upcoming
-                            borderColor = const Color(0xFF16BC00);
-                            statusBgColor = const Color(0xFF129E00);
-                            statusText = 'Upcoming';
-                            statusTextColor = Colors.white;
-                          } else if (currentTime.isAfter(bookingEnd)) {
-                            // No check-in
+                          } else if (statusText == 'Awaiting Check-out') {
+                            borderColor = AppColors.warningYellow;
+                            statusBgColor = Colors.white.withOpacity(0.25);
+                            statusTextColor = Colors.black;
+                          } else {
                             borderColor = AppColors.secondaryText;
                             statusBgColor = AppColors.borderColorDark;
-                            statusText = 'Completed';
                             statusTextColor = AppColors.primaryText;
-                          } else {
-                            // Awaiting check-in
-                            borderColor = AppColors.secondaryBlue;
-                            statusBgColor = AppColors.secondaryBlue;
-                            statusText = 'Awaiting Check-in';
-                            statusTextColor = Colors.white;
                           }
-                          
-                          final isAwaitingCheckIn = statusText == 'Awaiting Check-in';
-                          final isAwaitingCheckOut = statusText == 'Awaiting Check-out';
+
+                          final isAwaitingCheckOut =
+                              statusText == 'Awaiting Check-out';
                           final isOngoing = statusText == 'Ongoing';
                           final canCheckOut = isAwaitingCheckOut || isOngoing;
 
                           return Container(
-                            margin: EdgeInsets.only(bottom: screenHeight * 0.02),
+                            margin:
+                                EdgeInsets.only(bottom: screenHeight * 0.02),
                             padding: EdgeInsets.all(screenWidth * 0.012),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.9),
-                              border: Border.all(color: AppColors.borderColorDark),
+                              color: Colors.white.withOpacity(0.22),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.18),
+                              ),
                               borderRadius: BorderRadius.circular(11),
                             ),
                             child: Row(
@@ -1077,10 +1158,12 @@ final meetingBookedForCompany = hasOngoingMeeting
                                 // Booking Info
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       // 1. Meeting purpose/title (Judul Meeting)
-                                      if (booking.purpose != null && booking.purpose!.isNotEmpty) ...[
+                                      if (booking.purpose != null &&
+                                          booking.purpose!.isNotEmpty) ...[
                                         Text(
                                           booking.purpose!,
                                           style: TextStyle(
@@ -1109,10 +1192,11 @@ final meetingBookedForCompany = hasOngoingMeeting
                                         ),
                                       ),
                                       SizedBox(height: screenHeight * 0.008),
-                                      // 3. Para Pihak section (NO background)
-                                      if (booking.paraPihak != null && booking.paraPihak!.isNotEmpty) ...[
+                                      // 3. Pihak section (NO background)
+                                      if (_formatPihakLine(booking) !=
+                                          null) ...[
                                         Text(
-                                          booking.paraPihak!,
+                                          _formatPihakLine(booking)!,
                                           style: TextStyle(
                                             color: Colors.black87,
                                             fontSize: screenWidth * 0.011,
@@ -1125,7 +1209,8 @@ final meetingBookedForCompany = hasOngoingMeeting
                                         SizedBox(height: screenHeight * 0.004),
                                       ],
                                       // PIC: bookedForName · company
-                                      if (booking.bookedForName != null && booking.bookedForName!.isNotEmpty)
+                                      if (booking.bookedForName != null &&
+                                          booking.bookedForName!.isNotEmpty)
                                         Text(
                                           'PIC: ${booking.bookedForName}${booking.bookedForCompany != null && booking.bookedForCompany!.isNotEmpty ? ' · ${booking.bookedForCompany}' : ''}',
                                           style: TextStyle(
@@ -1142,15 +1227,7 @@ final meetingBookedForCompany = hasOngoingMeeting
                                 ),
 
                                 // Status Badge or Check-In/Check-Out Button
-                                if (isAwaitingCheckIn)
-                                  _CheckActionButton(
-                                    booking: booking,
-                                    bookingId: booking.id,
-                                    isCheckIn: true,
-                                    screenWidth: screenWidth,
-                                    screenHeight: screenHeight,
-                                  )
-                                else if (canCheckOut)
+                                if (canCheckOut)
                                   _CheckActionButton(
                                     booking: booking,
                                     bookingId: booking.id,
@@ -1169,7 +1246,7 @@ final meetingBookedForCompany = hasOngoingMeeting
                                     ),
                                     decoration: BoxDecoration(
                                       color: statusBgColor,
-                                      borderRadius: BorderRadius.circular(37),
+                                      borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Center(
                                       child: Text(
@@ -1188,7 +1265,7 @@ final meetingBookedForCompany = hasOngoingMeeting
                           );
                         },
                       ),
-                
+
                 // Add Booking Button (Bottom Right)
                 // Temporarily hidden because booking is currently only available from admin.
                 // Positioned(
@@ -1211,6 +1288,7 @@ final meetingBookedForCompany = hasOngoingMeeting
       },
     );
   }
+
   void _showBookingDialog(BuildContext context) {
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
@@ -1281,16 +1359,18 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
         actualCheckOutTime: widget.isCheckIn ? null : timeStr,
         markComplete: !widget.isCheckIn,
       );
-      
+
       // Force refresh room bookings for real-time update after check-in/check-out
       if (mounted) {
         try {
-          await context.read<BookingProvider>().forceRefreshRoomBookings(widget.booking.roomId);
+          await context
+              .read<BookingProvider>()
+              .forceRefreshRoomBookings(widget.booking.roomId);
         } catch (e) {
           debugPrint('Warning: Force refresh failed: $e');
         }
       }
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1310,7 +1390,9 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(widget.isCheckIn ? 'Check-in gagal: $e' : 'Check-out gagal: $e'),
+            content: Text(widget.isCheckIn
+                ? 'Check-in gagal: $e'
+                : 'Check-out gagal: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -1343,7 +1425,9 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
           vertical: widget.screenHeight * 0.005,
         ),
         decoration: BoxDecoration(
-          color: widget.isCheckIn ? const Color(0xFF16BC00) : AppColors.warningYellow,
+          color: widget.isCheckIn
+              ? const Color(0xFF16BC00)
+              : AppColors.warningYellow,
           borderRadius: BorderRadius.circular(37),
         ),
         child: Center(
@@ -1382,7 +1466,9 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
           vertical: widget.screenHeight * 0.005,
         ),
         decoration: BoxDecoration(
-          color: widget.isCheckIn ? AppColors.secondaryBlue : AppColors.warningYellow,
+          color: widget.isCheckIn
+              ? AppColors.secondaryBlue
+              : AppColors.warningYellow,
           borderRadius: BorderRadius.circular(37),
         ),
         child: Center(

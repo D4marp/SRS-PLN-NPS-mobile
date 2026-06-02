@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../models/booking_model.dart';
@@ -25,9 +24,10 @@ class BookingProvider extends ChangeNotifier {
 
   // Stream subscription management
   StreamSubscription<List<BookingModel>>? _userBookingsSubscription;
-  
+
   // Cache of active stream controllers per room (for force refresh)
-  final Map<String, StreamController<List<BookingModel>>> _roomStreamControllers = {};
+  final Map<String, Set<StreamController<List<BookingModel>>>>
+      _roomStreamControllers = {};
 
   // Getters
   List<BookingModel> get userBookings => _userBookings;
@@ -55,7 +55,8 @@ class BookingProvider extends ChangeNotifier {
       // Subscribe to WebSocket stream for real-time updates
       _userBookingsSubscription = WebSocketService.watchBookings().listen(
         (bookings) {
-          debugPrint('✅ Bookings loaded via WebSocket: ${bookings.length} bookings');
+          debugPrint(
+              '✅ Bookings loaded via WebSocket: ${bookings.length} bookings');
           _userBookings = bookings;
           _separateBookings();
           notifyListeners();
@@ -99,8 +100,8 @@ class BookingProvider extends ChangeNotifier {
     required int numberOfGuests,
     String? bookedForName,
     String? bookedForCompany,
-    String? paraPihak,
-    String? divisi,
+    String? pihak1,
+    String? pihak2,
     String? purpose,
   }) async {
     if (!_enabled) {
@@ -119,8 +120,8 @@ class BookingProvider extends ChangeNotifier {
         numberOfGuests: numberOfGuests,
         bookedForName: bookedForName,
         bookedForCompany: bookedForCompany,
-        paraPihak: paraPihak,
-        divisi: divisi,
+        pihak1: pihak1,
+        pihak2: pihak2,
         purpose: purpose,
       );
 
@@ -205,8 +206,6 @@ class BookingProvider extends ChangeNotifier {
     return _userBookings.where((booking) => booking.status == status).toList();
   }
 
-
-
   // Get bookings by room ID
   Future<List<BookingModel>> getBookingsByRoomId(String roomId) async {
     if (!_enabled) {
@@ -246,8 +245,10 @@ class BookingProvider extends ChangeNotifier {
     StreamSubscription<List<BookingModel>>? wsSubscription;
     bool disposed = false;
 
-    // Register controller in cache for force refresh capability
-    _roomStreamControllers[roomId] = controller;
+    // Register every controller so force refresh updates all room widgets.
+    _roomStreamControllers
+        .putIfAbsent(roomId, () => <StreamController<List<BookingModel>>>{})
+        .add(controller);
 
     /// Merge API data with WebSocket updates (dedup by booking ID)
     void mergeBookings(List<BookingModel> wsBookings) {
@@ -272,7 +273,8 @@ class BookingProvider extends ChangeNotifier {
         if (!disposed && !controller.isClosed) {
           currentData = bookings;
           controller.add(currentData);
-          debugPrint('📡 [API] Initial bookings loaded: ${currentData.length} for room $roomId');
+          debugPrint(
+              '📡 [API] Initial bookings loaded: ${currentData.length} for room $roomId');
         }
       } catch (e) {
         debugPrint('❌ [API] Failed to load initial bookings: $e');
@@ -284,7 +286,8 @@ class BookingProvider extends ChangeNotifier {
       if (disposed || wsSubscription != null) return;
 
       debugPrint('⏱️ [Polling] Starting API poll every 3s for room $roomId');
-      final pollSub = Stream.periodic(const Duration(seconds: 3)).asyncMap((_) async {
+      final pollSub =
+          Stream.periodic(const Duration(seconds: 3)).asyncMap((_) async {
         try {
           return await ApiBookingService.getRoomBookings(roomId);
         } catch (e) {
@@ -307,7 +310,8 @@ class BookingProvider extends ChangeNotifier {
     /// Subscribe to WebSocket for real-time updates (if token available)
     void subscribeToWebSocket() {
       if (ApiConfig.token == null || ApiConfig.token!.isEmpty) {
-        debugPrint('⚠️ No JWT token, WebSocket disabled. Using API polling fallback.');
+        debugPrint(
+            '⚠️ No JWT token, WebSocket disabled. Using API polling fallback.');
         setupPollingFallback();
         return;
       }
@@ -319,7 +323,8 @@ class BookingProvider extends ChangeNotifier {
           mergeBookings(wsBookings);
         },
         onError: (error) {
-          debugPrint('⚠️ [WebSocket] Error: $error — falling back to API polling');
+          debugPrint(
+              '⚠️ [WebSocket] Error: $error — falling back to API polling');
           setupPollingFallback();
         },
         onDone: () {
@@ -330,15 +335,21 @@ class BookingProvider extends ChangeNotifier {
     }
 
     controller.onListen = () {
-      debugPrint('👂 watchBookingsByRoomIdStream listener attached for room $roomId');
+      debugPrint(
+          '👂 watchBookingsByRoomIdStream listener attached for room $roomId');
       fetchInitialData().then((_) => subscribeToWebSocket());
     };
 
     controller.onCancel = () {
       disposed = true;
       wsSubscription?.cancel();
-      _roomStreamControllers.remove(roomId);
-      debugPrint('🔌 watchBookingsByRoomIdStream listener cancelled for room $roomId');
+      final controllers = _roomStreamControllers[roomId];
+      controllers?.remove(controller);
+      if (controllers == null || controllers.isEmpty) {
+        _roomStreamControllers.remove(roomId);
+      }
+      debugPrint(
+          '🔌 watchBookingsByRoomIdStream listener cancelled for room $roomId');
     };
 
     return controller.stream;
@@ -355,17 +366,23 @@ class BookingProvider extends ChangeNotifier {
     if (!_enabled) return [];
     try {
       final bookings = await ApiBookingService.getRoomBookings(roomId);
-      
+
       // Emit to cached stream controller if listener is active
-      if (_roomStreamControllers.containsKey(roomId)) {
-        final controller = _roomStreamControllers[roomId];
-        if (controller != null && !controller.isClosed) {
+      final controllers = _roomStreamControllers[roomId];
+      if (controllers != null && controllers.isNotEmpty) {
+        for (final controller in List.of(controllers)) {
+          if (controller.isClosed) {
+            controllers.remove(controller);
+            continue;
+          }
           controller.add(bookings);
-          debugPrint('✨ [Force Refresh] Emitted ${bookings.length} bookings to stream for room $roomId');
         }
+        debugPrint(
+            '✨ [Force Refresh] Emitted ${bookings.length} bookings to ${controllers.length} stream(s) for room $roomId');
       }
-      
-      debugPrint('🔄 [Force Refresh] Room $roomId: ${bookings.length} bookings updated');
+
+      debugPrint(
+          '🔄 [Force Refresh] Room $roomId: ${bookings.length} bookings updated');
       return bookings;
     } catch (e) {
       debugPrint('❌ [Force Refresh] Failed: $e');
@@ -477,7 +494,8 @@ class BookingProvider extends ChangeNotifier {
         _separateBookings();
       }
 
-      debugPrint('✅ Check-in/Check-out times submitted for booking: $bookingId');
+      debugPrint(
+          '✅ Check-in/Check-out times submitted for booking: $bookingId');
       return true;
     } catch (e) {
       debugPrint('❌ Error submitting check-in/check-out: $e');
@@ -496,4 +514,3 @@ class BookingProvider extends ChangeNotifier {
     super.dispose();
   }
 }
-

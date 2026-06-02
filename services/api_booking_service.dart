@@ -28,8 +28,8 @@ class ApiBookingService {
     required int numberOfGuests,
     String? bookedForName,
     String? bookedForCompany,
-    String? paraPihak,
-    String? divisi,
+    String? pihak1,
+    String? pihak2,
     String? purpose,
   }) async {
     final resp = await _dio().post('/api/bookings', data: {
@@ -38,10 +38,12 @@ class ApiBookingService {
       'checkInTime': checkInTime,
       'checkOutTime': checkOutTime,
       'numberOfGuests': numberOfGuests,
-      if (bookedForName != null && bookedForName.isNotEmpty) 'bookedForName': bookedForName,
-      if (bookedForCompany != null && bookedForCompany.isNotEmpty) 'bookedForCompany': bookedForCompany,
-      if (paraPihak != null && paraPihak.isNotEmpty) 'paraPihak': paraPihak,
-      if (divisi != null && divisi.isNotEmpty) 'divisi': divisi,
+      if (bookedForName != null && bookedForName.isNotEmpty)
+        'bookedForName': bookedForName,
+      if (bookedForCompany != null && bookedForCompany.isNotEmpty)
+        'bookedForCompany': bookedForCompany,
+      if (pihak1 != null && pihak1.isNotEmpty) 'pihak1': pihak1,
+      if (pihak2 != null && pihak2.isNotEmpty) 'pihak2': pihak2,
       if (purpose != null && purpose.isNotEmpty) 'purpose': purpose,
     });
     return BookingModel.fromJson(
@@ -75,7 +77,8 @@ class ApiBookingService {
         'satisfactionLevel': satisfaction,
         'reason': reason,
         'complaintItems': complaintItems,
-        if (complaintOther != null && complaintOther.isNotEmpty) 'complaintOther': complaintOther,
+        if (complaintOther != null && complaintOther.isNotEmpty)
+          'complaintOther': complaintOther,
       },
     );
     return getBookingById(bookingId);
@@ -93,7 +96,8 @@ class ApiBookingService {
       '/api/bookings/$bookingId/checkin-checkout',
       data: {
         if (actualCheckInTime != null) 'actualCheckInTime': actualCheckInTime,
-        if (actualCheckOutTime != null) 'actualCheckOutTime': actualCheckOutTime,
+        if (actualCheckOutTime != null)
+          'actualCheckOutTime': actualCheckOutTime,
         if (markComplete) 'markComplete': true,
       },
     );
