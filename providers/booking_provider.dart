@@ -25,9 +25,11 @@ class BookingProvider extends ChangeNotifier {
   // Stream subscription management
   StreamSubscription<List<BookingModel>>? _userBookingsSubscription;
 
-  // Cache of active stream controllers per room (for force refresh)
+  // Cache of active stream controllers per room (for force refresh).
+  // Keep this field name distinct from the previous single-controller cache so
+  // Flutter web hot reload does not reuse a stale Map<String, StreamController>.
   final Map<String, Set<StreamController<List<BookingModel>>>>
-      _roomStreamControllers = {};
+      _roomStreamControllerSets = {};
 
   // Getters
   List<BookingModel> get userBookings => _userBookings;
@@ -246,7 +248,7 @@ class BookingProvider extends ChangeNotifier {
     bool disposed = false;
 
     // Register every controller so force refresh updates all room widgets.
-    _roomStreamControllers
+    _roomStreamControllerSets
         .putIfAbsent(roomId, () => <StreamController<List<BookingModel>>>{})
         .add(controller);
 
@@ -343,10 +345,10 @@ class BookingProvider extends ChangeNotifier {
     controller.onCancel = () {
       disposed = true;
       wsSubscription?.cancel();
-      final controllers = _roomStreamControllers[roomId];
+      final controllers = _roomStreamControllerSets[roomId];
       controllers?.remove(controller);
       if (controllers == null || controllers.isEmpty) {
-        _roomStreamControllers.remove(roomId);
+        _roomStreamControllerSets.remove(roomId);
       }
       debugPrint(
           '🔌 watchBookingsByRoomIdStream listener cancelled for room $roomId');
@@ -368,7 +370,7 @@ class BookingProvider extends ChangeNotifier {
       final bookings = await ApiBookingService.getRoomBookings(roomId);
 
       // Emit to cached stream controller if listener is active
-      final controllers = _roomStreamControllers[roomId];
+      final controllers = _roomStreamControllerSets[roomId];
       if (controllers != null && controllers.isNotEmpty) {
         for (final controller in List.of(controllers)) {
           if (controller.isClosed) {
