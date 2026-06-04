@@ -39,6 +39,8 @@ class RoomDetailsScreen extends StatefulWidget {
 }
 
 class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
+  static const Duration _checkoutGracePeriod = Duration(minutes: 30);
+
   late Timer _timeUpdateTimer;
   late ValueNotifier<DateTime> _timeNotifier;
   late StreamController<BookingUpdateEvent> _bookingEventController;
@@ -157,16 +159,28 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
       return 'Invalid Time';
     }
 
-    if (actualEnd != null &&
-        (currentTime.isAfter(actualEnd) ||
-            currentTime.isAtSameMomentAs(actualEnd))) {
+    if (actualEnd != null ||
+        booking.status == BookingStatus.cancelled ||
+        booking.status == BookingStatus.rejected) {
+      return 'Completed';
+    }
+
+    final checkoutGraceEnd = bookingEnd.add(_checkoutGracePeriod);
+
+    if (booking.status == BookingStatus.completed &&
+        currentTime.isBefore(bookingEnd)) {
       return 'Completed';
     }
 
     if (actualStart != null) {
       if (currentTime.isAfter(actualStart) ||
           currentTime.isAtSameMomentAs(actualStart)) {
-        return actualEnd == null ? 'Awaiting Check-out' : 'Ongoing';
+        if (_isAtOrAfter(currentTime, checkoutGraceEnd)) {
+          return 'Completed';
+        }
+        return currentTime.isAfter(bookingEnd)
+            ? 'Awaiting Check-out'
+            : 'Ongoing';
       }
       if (currentTime.isBefore(actualStart)) {
         return 'Upcoming';
@@ -176,10 +190,17 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     if (currentTime.isBefore(bookingStart)) {
       return 'Upcoming';
     }
-    if (currentTime.isAfter(bookingEnd)) {
+    if (_isAtOrAfter(currentTime, checkoutGraceEnd)) {
       return 'Completed';
     }
+    if (currentTime.isAfter(bookingEnd)) {
+      return 'Awaiting Check-out';
+    }
     return 'Ongoing';
+  }
+
+  bool _isAtOrAfter(DateTime value, DateTime compareTo) {
+    return value.isAfter(compareTo) || value.isAtSameMomentAs(compareTo);
   }
 
   bool _isActiveScheduleStatus(String statusText) {
@@ -192,8 +213,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     BookingModel booking,
     DateTime currentTime,
   ) {
-    if (booking.status == BookingStatus.completed ||
-        booking.status == BookingStatus.cancelled ||
+    if (booking.status == BookingStatus.cancelled ||
         booking.status == BookingStatus.rejected) {
       return false;
     }
@@ -531,7 +551,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: screenWidth * 0.03,
-                      fontFamily: 'Roboto',
+                      fontFamily: 'Arial',
                       fontWeight: FontWeight.w700,
                     ),
                     maxLines: 1,
@@ -553,7 +573,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: screenWidth * 0.0125,
-                            fontFamily: 'Roboto',
+                            fontFamily: 'Arial',
                             fontWeight: FontWeight.w600,
                           ),
                           maxLines: 1,
@@ -571,7 +591,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: screenWidth * 0.0125,
-                        fontFamily: 'Roboto',
+                        fontFamily: 'Arial',
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -600,7 +620,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                           style: TextStyle(
                             color: Colors.black,
                             fontSize: screenWidth * 0.0127,
-                            fontFamily: 'Roboto',
+                            fontFamily: 'Arial',
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -614,7 +634,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: screenWidth * 0.0125,
-                      fontFamily: 'Roboto',
+                      fontFamily: 'Arial',
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -636,116 +656,107 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
               child: Column(
                 children: [
                   // Header with Time and Status
-                  Row(
-                    children: [
-                      // Meeting Title and Time
-                      Expanded(
-                        child: StreamBuilder<List<BookingModel>>(
-                          stream: context
-                              .read<BookingProvider>()
-                              .watchBookingsByRoomIdStream(widget.room.id),
-                          builder: (context, snapshot) {
-                            return ValueListenableBuilder<DateTime>(
-                              valueListenable: _timeNotifier,
-                              builder: (context, currentTime, _) {
-                                BookingModel? ongoingBooking;
+                  // Badge (OCCUPIED/AVAILABLE) sits in top-right corner via Stack
+                  // so the title can use full width without collision.
+                  StreamBuilder<List<BookingModel>>(
+                    stream: context
+                        .read<BookingProvider>()
+                        .watchBookingsByRoomIdStream(widget.room.id),
+                    builder: (context, snapshot) {
+                      return ValueListenableBuilder<DateTime>(
+                        valueListenable: _timeNotifier,
+                        builder: (context, currentTime, _) {
+                          BookingModel? ongoingBooking;
 
-                                if (snapshot.hasData && snapshot.data != null) {
-                                  final todayBookings = _filterBookingsForToday(
-                                      snapshot.data ?? []);
-                                  for (final booking in todayBookings) {
-                                    if (_isOngoingForRoomStatus(
-                                      booking,
-                                      currentTime,
-                                    )) {
-                                      ongoingBooking = booking;
-                                      break;
-                                    }
-                                  }
+                          if (snapshot.hasData && snapshot.data != null) {
+                            final todayBookings =
+                                _filterBookingsForToday(snapshot.data ?? []);
+                            for (final booking in todayBookings) {
+                              if (_isOngoingForRoomStatus(
+                                booking,
+                                currentTime,
+                              )) {
+                                ongoingBooking = booking;
+                                break;
+                              }
+                            }
+                          }
+
+                          final hasOngoingMeeting = ongoingBooking != null;
+
+                          String availabilityHeader = '';
+                          if (!hasOngoingMeeting &&
+                              snapshot.hasData &&
+                              snapshot.data != null) {
+                            final todayBookings =
+                                _filterBookingsForToday(snapshot.data!);
+                            DateTime? nextStart;
+                            for (var b in todayBookings) {
+                              if (!_shouldShowBookingInSchedule(
+                                b,
+                                currentTime,
+                              )) {
+                                continue;
+                              }
+                              final start = _parseTimeOnDate(
+                                  b.bookingDate, b.checkInTime);
+                              if (start != null && start.isAfter(currentTime)) {
+                                if (nextStart == null ||
+                                    start.isBefore(nextStart)) {
+                                  nextStart = start;
                                 }
+                              }
+                            }
+                            final now = currentTime;
+                            final startStr =
+                                '${now.hour.toString().padLeft(2, '0')}.${now.minute.toString().padLeft(2, '0')}';
+                            final endStr = nextStart != null
+                                ? '${nextStart.hour.toString().padLeft(2, '0')}.${nextStart.minute.toString().padLeft(2, '0')}'
+                                : '24.00';
+                            availabilityHeader = '$startStr - $endStr';
+                          }
 
-                                final hasOngoingMeeting =
-                                    ongoingBooking != null;
+                          final meetingTitle = hasOngoingMeeting
+                              ? (ongoingBooking!.purpose?.isNotEmpty == true
+                                  ? ongoingBooking!.purpose!
+                                  : 'Rapat')
+                              : (availabilityHeader.isNotEmpty
+                                  ? availabilityHeader
+                                  : '${currentTime.hour.toString().padLeft(2, '0')}:${currentTime.minute.toString().padLeft(2, '0')}');
+                          final meetingScheduleLine = hasOngoingMeeting
+                              ? '${_getFormattedDate(ongoingBooking!.bookingDate)} ${_formatTimeForDisplay(ongoingBooking!.checkInTime)} - ${_formatTimeForDisplay(ongoingBooking!.checkOutTime)}'
+                              : _getFormattedDate(currentTime);
+                          final meetingPihakLine = hasOngoingMeeting
+                              ? _formatPihakLine(ongoingBooking!)
+                              : null;
 
-                                // When there's no ongoing meeting, compute availability
-                                // range until next booking today (or 24.00) and show it
-                                // in the yellow header text (as requested).
-                                String availabilityHeader = '';
-                                if (!hasOngoingMeeting &&
-                                    snapshot.hasData &&
-                                    snapshot.data != null) {
-                                  final todayBookings =
-                                      _filterBookingsForToday(snapshot.data!);
-                                  DateTime? nextStart;
-                                  for (var b in todayBookings) {
-                                    if (!_shouldShowBookingInSchedule(
-                                      b,
-                                      currentTime,
-                                    )) {
-                                      continue;
-                                    }
-                                    final start = _parseTimeOnDate(
-                                        b.bookingDate, b.checkInTime);
-                                    if (start != null &&
-                                        start.isAfter(currentTime)) {
-                                      if (nextStart == null ||
-                                          start.isBefore(nextStart)) {
-                                        nextStart = start;
-                                      }
-                                    }
-                                  }
-                                  final now = currentTime;
-                                  final startStr =
-                                      '${now.hour.toString().padLeft(2, '0')}.${now.minute.toString().padLeft(2, '0')}';
-                                  final endStr = nextStart != null
-                                      ? '${nextStart.hour.toString().padLeft(2, '0')}.${nextStart.minute.toString().padLeft(2, '0')}'
-                                      : '24.00';
-                                  availabilityHeader = '$startStr - $endStr';
-                                }
-
-                                final meetingTitle = hasOngoingMeeting
-                                    ? (ongoingBooking!.purpose?.isNotEmpty ==
-                                            true
-                                        ? ongoingBooking!.purpose!
-                                        : 'Rapat')
-                                    : (availabilityHeader.isNotEmpty
-                                        ? availabilityHeader
-                                        : '${currentTime.hour.toString().padLeft(2, '0')}:${currentTime.minute.toString().padLeft(2, '0')}');
-                                final meetingScheduleLine = hasOngoingMeeting
-                                    ? '${_getFormattedDate(ongoingBooking!.bookingDate)} ${_formatTimeForDisplay(ongoingBooking!.checkInTime)} - ${_formatTimeForDisplay(ongoingBooking!.checkOutTime)}'
-                                    : _getFormattedDate(currentTime);
-                                final meetingPihakLine = hasOngoingMeeting
-                                    ? _formatPihakLine(ongoingBooking!)
-                                    : null;
-                                final meetingBookedForName = hasOngoingMeeting
-                                    ? ongoingBooking!.bookedForName
-                                    : null;
-                                final meetingBookedForCompany =
-                                    hasOngoingMeeting
-                                        ? ongoingBooking!.bookedForCompany
-                                        : null;
-
-                                return Column(
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Left: title + schedule info (takes remaining space)
+                              Expanded(
+                                child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       meetingTitle,
                                       style: TextStyle(
-                                        color: const Color(
-                                            0xFFEFE62F), // Golden yellow
-                                        fontSize: screenWidth * 0.03,
-                                        fontFamily: 'Roboto',
+                                        color: const Color(0xFFEFE62F),
+                                        fontSize: screenWidth * 0.022,
+                                        fontFamily: 'Arial',
                                         fontWeight: FontWeight.w700,
-                                        height: 1.0,
+                                        height: 1.25,
                                       ),
+                                      // No maxLines limit — let it wrap naturally
+                                      softWrap: true,
                                     ),
                                     SizedBox(height: screenHeight * 0.004),
                                     Text(
                                       meetingScheduleLine,
                                       style: TextStyle(
                                         color: Colors.white70,
-                                        fontSize: screenWidth * 0.014,
-                                        fontFamily: 'Roboto',
+                                        fontSize: screenWidth * 0.013,
+                                        fontFamily: 'Arial',
                                         fontWeight: FontWeight.w600,
                                         height: 1.0,
                                       ),
@@ -758,23 +769,24 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                         style: TextStyle(
                                           color: const Color(0xFFEFE62F),
                                           fontSize: screenWidth * 0.012,
-                                          fontFamily: 'Roboto',
+                                          fontFamily: 'Arial',
                                           fontWeight: FontWeight.w700,
                                         ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
+                                        softWrap: true,
                                       ),
                                     ],
                                   ],
-                                );
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                      // Available Status - Based on actual bookings
-                      _buildAvailabilityStatus(screenWidth, screenHeight),
-                    ],
+                                ),
+                              ),
+                              SizedBox(width: screenWidth * 0.02),
+                              // Right: badge — fixed width, aligned top
+                              _buildAvailabilityStatus(
+                                  screenWidth, screenHeight),
+                            ],
+                          );
+                        },
+                      );
+                    },
                   ),
                   SizedBox(height: screenHeight * 0.03),
                   Divider(color: AppColors.borderColorDark, thickness: 2),
@@ -787,7 +799,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: screenWidth * 0.0125,
-                        fontFamily: 'Roboto',
+                        fontFamily: 'Arial',
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -821,7 +833,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
         style: TextStyle(
           color: Colors.white70,
           fontSize: screenWidth * 0.0115,
-          fontFamily: 'Roboto',
+          fontFamily: 'Arial',
           fontWeight: FontWeight.w500,
         ),
       );
@@ -850,7 +862,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                 style: TextStyle(
                   color: Colors.black,
                   fontSize: screenWidth * 0.009,
-                  fontFamily: 'Roboto',
+                  fontFamily: 'Arial',
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -991,7 +1003,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                               fontSize: isAvailable
                                   ? screenWidth * 0.0128
                                   : screenWidth * 0.0142,
-                              fontFamily: 'Roboto',
+                              fontFamily: 'Arial',
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.5,
                               height: 1.0,
@@ -1088,7 +1100,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: screenWidth * 0.012,
-                            fontFamily: 'Roboto',
+                            fontFamily: 'Arial',
                           ),
                         ),
                       )
@@ -1169,8 +1181,8 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                           style: TextStyle(
                                             color: Colors.black,
                                             fontSize: screenWidth * 0.013,
-                                            fontFamily: 'Roboto',
-                                            fontWeight: FontWeight.w700,
+                                            fontFamily: 'Arial',
+                                            fontWeight: FontWeight.bold,
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
@@ -1187,7 +1199,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                         style: TextStyle(
                                           color: AppColors.primaryText,
                                           fontSize: screenWidth * 0.012,
-                                          fontFamily: 'Roboto',
+                                          fontFamily: 'Arial',
                                           fontWeight: FontWeight.w500,
                                         ),
                                       ),
@@ -1200,7 +1212,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                           style: TextStyle(
                                             color: Colors.black87,
                                             fontSize: screenWidth * 0.011,
-                                            fontFamily: 'Roboto',
+                                            fontFamily: 'Arial',
                                             fontWeight: FontWeight.w600,
                                           ),
                                           maxLines: 1,
@@ -1216,7 +1228,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                           style: TextStyle(
                                             color: Colors.black87,
                                             fontSize: screenWidth * 0.0105,
-                                            fontFamily: 'Roboto',
+                                            fontFamily: 'Arial',
                                             fontWeight: FontWeight.w500,
                                           ),
                                           maxLines: 1,
@@ -1254,7 +1266,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                         style: TextStyle(
                                           color: statusTextColor,
                                           fontSize: screenWidth * 0.011,
-                                          fontFamily: 'Roboto',
+                                          fontFamily: 'Arial',
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
@@ -1332,17 +1344,18 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
     // Untuk CHECK-OUT: minta feedback DULU sebelum checkout
     if (!widget.isCheckIn && !widget.booking.hasFeedback) {
       // Tampilkan feedback modal terlebih dahulu
-      final feedbackSubmitted = await showDialog(
+      final feedbackSubmitted = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => FeedbackModal(
           booking: widget.booking,
           onFeedbackSubmitted: () {},
+          autoSkipAfter: const Duration(minutes: 1),
         ),
       );
 
       // Jika user cancel feedback, jangan lanjut checkout
-      if (!feedbackSubmitted) {
+      if (feedbackSubmitted != true) {
         return;
       }
     }
@@ -1445,7 +1458,7 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: widget.screenWidth * 0.011,
-                  fontFamily: 'Roboto',
+                  fontFamily: 'Arial',
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1486,7 +1499,7 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: widget.screenWidth * 0.011,
-                  fontFamily: 'Roboto',
+                  fontFamily: 'Arial',
                   fontWeight: FontWeight.w600,
                 ),
               ),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/booking_model.dart';
 import '../services/api_booking_service.dart';
@@ -7,11 +9,13 @@ import '../core/gen/assets.gen.dart';
 class FeedbackModal extends StatefulWidget {
   final BookingModel booking;
   final VoidCallback onFeedbackSubmitted;
+  final Duration? autoSkipAfter;
 
   const FeedbackModal({
     Key? key,
     required this.booking,
     required this.onFeedbackSubmitted,
+    this.autoSkipAfter,
   }) : super(key: key);
 
   @override
@@ -41,6 +45,46 @@ class _FeedbackModalState extends State<FeedbackModal> {
   String? _errorMessage;
   bool _showApology = false;
   bool _showThankYou = false;
+  Timer? _autoSkipTimer;
+  int? _remainingAutoSkipSeconds;
+
+  @override
+  void initState() {
+    super.initState();
+    _remainingAutoSkipSeconds = widget.autoSkipAfter?.inSeconds;
+    _startAutoSkipTimer();
+  }
+
+  void _startAutoSkipTimer() {
+    final autoSkipAfter = widget.autoSkipAfter;
+    if (autoSkipAfter == null) {
+      return;
+    }
+
+    _autoSkipTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      final remaining =
+          (_remainingAutoSkipSeconds ?? autoSkipAfter.inSeconds) - 1;
+      if (remaining <= 0) {
+        timer.cancel();
+        Navigator.of(context).pop(true);
+        return;
+      }
+
+      setState(() {
+        _remainingAutoSkipSeconds = remaining;
+      });
+    });
+  }
+
+  void _cancelAutoSkipTimer() {
+    _autoSkipTimer?.cancel();
+    _autoSkipTimer = null;
+  }
 
   void _startAutoClose() {
     Future.delayed(const Duration(seconds: 3), () {
@@ -96,6 +140,7 @@ class _FeedbackModalState extends State<FeedbackModal> {
 
       if (mounted) {
         widget.onFeedbackSubmitted();
+        _cancelAutoSkipTimer();
         if (keepOpen) {
           setState(() {
             _showApology = true;
@@ -124,6 +169,7 @@ class _FeedbackModalState extends State<FeedbackModal> {
 
   @override
   void dispose() {
+    _cancelAutoSkipTimer();
     _otherComplaintController.dispose();
     super.dispose();
   }
@@ -225,6 +271,17 @@ class _FeedbackModalState extends State<FeedbackModal> {
                     ),
                 textAlign: TextAlign.center,
               ),
+              if (_remainingAutoSkipSeconds != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Survei akan dilewati otomatis dalam ${(_remainingAutoSkipSeconds! / 60).floor().toString().padLeft(2, '0')}:${(_remainingAutoSkipSeconds! % 60).toString().padLeft(2, '0')}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.secondaryText,
+                        fontStyle: FontStyle.italic,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
               const SizedBox(height: AppSpacing.lg),
 
               // Image buttons
