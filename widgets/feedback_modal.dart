@@ -8,12 +8,14 @@ import '../core/gen/assets.gen.dart';
 
 class FeedbackModal extends StatefulWidget {
   final BookingModel booking;
+  final List<String> roomAmenities;
   final VoidCallback onFeedbackSubmitted;
   final Duration? autoSkipAfter;
 
   const FeedbackModal({
     Key? key,
     required this.booking,
+    this.roomAmenities = const [],
     required this.onFeedbackSubmitted,
     this.autoSkipAfter,
   }) : super(key: key);
@@ -22,19 +24,29 @@ class FeedbackModal extends StatefulWidget {
   State<FeedbackModal> createState() => _FeedbackModalState();
 }
 
-const _kComplaintTags = [
-  'AC rusak',
-  'HDMI rusak',
-  'LAYAR TV rusak',
-  'LAYAR VIDETRON rusak',
-  'LAYAR PROYEKTOR rusak',
-  'SPLITER rusak',
-  'PERANGKAT VIDEO CONFERENCE rusak',
-  'MIC rusak',
-  'SPEAKER rusak',
-  'POINTER rusak',
-  'FLIPCHART rusak',
-];
+const _kComplaintTagSuffix = ' rusak';
+
+List<String> buildComplaintTagsFromAmenities(List<String> amenities) {
+  final tags = <String>[];
+  final seen = <String>{};
+
+  for (final amenity in amenities) {
+    final normalized = amenity.trim();
+    if (normalized.isEmpty) continue;
+
+    final lower = normalized.toLowerCase();
+    if (seen.contains(lower)) continue;
+    seen.add(lower);
+
+    if (lower.endsWith(_kComplaintTagSuffix.trim())) {
+      tags.add(normalized);
+    } else {
+      tags.add('$normalized$_kComplaintTagSuffix');
+    }
+  }
+
+  return tags;
+}
 
 class _FeedbackModalState extends State<FeedbackModal> {
   String? _selectedSatisfaction; // "satisfied" or "unsatisfied"
@@ -46,12 +58,10 @@ class _FeedbackModalState extends State<FeedbackModal> {
   bool _showApology = false;
   bool _showThankYou = false;
   Timer? _autoSkipTimer;
-  int? _remainingAutoSkipSeconds;
 
   @override
   void initState() {
     super.initState();
-    _remainingAutoSkipSeconds = widget.autoSkipAfter?.inSeconds;
     _startAutoSkipTimer();
   }
 
@@ -61,23 +71,11 @@ class _FeedbackModalState extends State<FeedbackModal> {
       return;
     }
 
-    _autoSkipTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _autoSkipTimer = Timer(autoSkipAfter, () {
       if (!mounted) {
-        timer.cancel();
         return;
       }
-
-      final remaining =
-          (_remainingAutoSkipSeconds ?? autoSkipAfter.inSeconds) - 1;
-      if (remaining <= 0) {
-        timer.cancel();
-        Navigator.of(context).pop(true);
-        return;
-      }
-
-      setState(() {
-        _remainingAutoSkipSeconds = remaining;
-      });
+      Navigator.of(context).pop(true);
     });
   }
 
@@ -103,6 +101,9 @@ class _FeedbackModalState extends State<FeedbackModal> {
   bool get _canSubmit {
     return _selectedSatisfaction != null && _isReasonValid && !_isLoading;
   }
+
+  List<String> get _complaintTags =>
+      buildComplaintTagsFromAmenities(widget.roomAmenities);
 
   String _buildReason() {
     if (_selectedSatisfaction == 'unsatisfied') {
@@ -229,14 +230,6 @@ class _FeedbackModalState extends State<FeedbackModal> {
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Menutup otomatis dalam 3 detik...',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.secondaryText,
-                      fontStyle: FontStyle.italic,
-                    ),
-              ),
             ],
           ),
         ),
@@ -271,17 +264,6 @@ class _FeedbackModalState extends State<FeedbackModal> {
                     ),
                 textAlign: TextAlign.center,
               ),
-              if (_remainingAutoSkipSeconds != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Survei akan dilewati otomatis dalam ${(_remainingAutoSkipSeconds! / 60).floor().toString().padLeft(2, '0')}:${(_remainingAutoSkipSeconds! % 60).toString().padLeft(2, '0')}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.secondaryText,
-                        fontStyle: FontStyle.italic,
-                      ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
               const SizedBox(height: AppSpacing.lg),
 
               // Image buttons
@@ -421,10 +403,20 @@ class _FeedbackModalState extends State<FeedbackModal> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _kComplaintTags.map((tag) {
+                  _complaintTags.isEmpty
+                      ? Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Ruangan ini belum memiliki fasilitas terdaftar.',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: AppColors.secondaryText,
+                                ),
+                          ),
+                        )
+                      : Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _complaintTags.map((tag) {
                       final selected = _selectedTags.contains(tag);
                       return FilterChip(
                         label: Text(tag),

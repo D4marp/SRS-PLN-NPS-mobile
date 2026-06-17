@@ -6,8 +6,8 @@ import '../services/websocket_service.dart';
 import '../utils/api_config.dart';
 
 class BookingProvider extends ChangeNotifier {
-  // Enabled only when running as web. Other platforms keep provider as no-op.
-  final bool _enabled = kIsWeb;
+  // Booking features are available on every platform that can reach the API.
+  final bool _enabled = true;
 
   bool get isEnabled => _enabled;
 
@@ -45,7 +45,7 @@ class BookingProvider extends ChangeNotifier {
   /// The server filters bookings by the user's JWT token.
   void loadUserBookings(String userId) {
     if (!_enabled) {
-      debugPrint('BookingProvider: loadUserBookings skipped (not web)');
+      debugPrint('BookingProvider: loadUserBookings skipped (disabled)');
       return;
     }
     try {
@@ -107,7 +107,7 @@ class BookingProvider extends ChangeNotifier {
     String? purpose,
   }) async {
     if (!_enabled) {
-      debugPrint('BookingProvider: createBooking skipped (not web)');
+      debugPrint('BookingProvider: createBooking skipped (disabled)');
       return null;
     }
     try {
@@ -139,7 +139,7 @@ class BookingProvider extends ChangeNotifier {
   // Cancel booking
   Future<bool> cancelBooking(String bookingId) async {
     if (!_enabled) {
-      debugPrint('BookingProvider: cancelBooking skipped (not web)');
+      debugPrint('BookingProvider: cancelBooking skipped (disabled)');
       return false;
     }
     try {
@@ -159,7 +159,7 @@ class BookingProvider extends ChangeNotifier {
   // Get booking by ID — try local cache first, then API
   Future<BookingModel?> getBookingById(String bookingId) async {
     if (!_enabled) {
-      debugPrint('BookingProvider: getBookingById skipped (not web)');
+      debugPrint('BookingProvider: getBookingById skipped (disabled)');
       return null;
     }
     try {
@@ -211,7 +211,7 @@ class BookingProvider extends ChangeNotifier {
   // Get bookings by room ID
   Future<List<BookingModel>> getBookingsByRoomId(String roomId) async {
     if (!_enabled) {
-      debugPrint('BookingProvider: getBookingsByRoomId skipped (not web)');
+      debugPrint('BookingProvider: getBookingsByRoomId skipped (disabled)');
       return [];
     }
     try {
@@ -245,6 +245,7 @@ class BookingProvider extends ChangeNotifier {
     final controller = StreamController<List<BookingModel>>.broadcast();
     List<BookingModel> currentData = [];
     StreamSubscription<List<BookingModel>>? wsSubscription;
+    StreamSubscription<List<BookingModel>>? pollingSubscription;
     bool disposed = false;
 
     // Register every controller so force refresh updates all room widgets.
@@ -285,10 +286,10 @@ class BookingProvider extends ChangeNotifier {
 
     /// Fallback: poll API every 3s when WebSocket is unavailable (faster updates for kiosk)
     void setupPollingFallback() {
-      if (disposed || wsSubscription != null) return;
+      if (disposed || pollingSubscription != null) return;
 
       debugPrint('⏱️ [Polling] Starting API poll every 3s for room $roomId');
-      final pollSub =
+      pollingSubscription =
           Stream.periodic(const Duration(seconds: 3)).asyncMap((_) async {
         try {
           return await ApiBookingService.getRoomBookings(roomId);
@@ -305,8 +306,6 @@ class BookingProvider extends ChangeNotifier {
           }
         },
       );
-
-      wsSubscription = pollSub;
     }
 
     /// Subscribe to WebSocket for real-time updates (if token available)
@@ -327,10 +326,13 @@ class BookingProvider extends ChangeNotifier {
         onError: (error) {
           debugPrint(
               '⚠️ [WebSocket] Error: $error — falling back to API polling');
+          wsSubscription?.cancel();
+          wsSubscription = null;
           setupPollingFallback();
         },
         onDone: () {
           debugPrint('⚠️ [WebSocket] Closed — falling back to API polling');
+          wsSubscription = null;
           setupPollingFallback();
         },
       );
@@ -345,6 +347,7 @@ class BookingProvider extends ChangeNotifier {
     controller.onCancel = () {
       disposed = true;
       wsSubscription?.cancel();
+      pollingSubscription?.cancel();
       final controllers = _roomStreamControllerSets[roomId];
       controllers?.remove(controller);
       if (controllers == null || controllers.isEmpty) {
@@ -437,7 +440,7 @@ class BookingProvider extends ChangeNotifier {
     required String reason,
   }) async {
     if (!_enabled) {
-      debugPrint('BookingProvider: submitFeedback skipped (not web)');
+      debugPrint('BookingProvider: submitFeedback skipped (disabled)');
       return false;
     }
     try {
@@ -476,7 +479,7 @@ class BookingProvider extends ChangeNotifier {
     bool markComplete = false,
   }) async {
     if (!_enabled) {
-      debugPrint('BookingProvider: submitCheckInCheckOut skipped (not web)');
+      debugPrint('BookingProvider: submitCheckInCheckOut skipped (disabled)');
       return false;
     }
     try {

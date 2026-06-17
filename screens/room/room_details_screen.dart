@@ -159,18 +159,14 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
       return 'Invalid Time';
     }
 
-    if (actualEnd != null ||
+    if (booking.status == BookingStatus.completed ||
         booking.status == BookingStatus.cancelled ||
-        booking.status == BookingStatus.rejected) {
+        booking.status == BookingStatus.rejected ||
+        actualEnd != null) {
       return 'Completed';
     }
 
     final checkoutGraceEnd = bookingEnd.add(_checkoutGracePeriod);
-
-    if (booking.status == BookingStatus.completed &&
-        currentTime.isBefore(bookingEnd)) {
-      return 'Completed';
-    }
 
     if (actualStart != null) {
       if (currentTime.isAfter(actualStart) ||
@@ -214,7 +210,9 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     DateTime currentTime,
   ) {
     if (booking.status == BookingStatus.cancelled ||
-        booking.status == BookingStatus.rejected) {
+        booking.status == BookingStatus.rejected ||
+        booking.status == BookingStatus.completed ||
+        booking.actualCheckOutTime?.isNotEmpty == true) {
       return false;
     }
 
@@ -332,16 +330,17 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
         booking.bookingDate,
         booking.checkOutTime,
       );
-      final actualStart = _parseTimeOnDate(
-        booking.bookingDate,
-        booking.actualCheckInTime,
-      );
       final actualEnd = _parseTimeOnDate(
         booking.bookingDate,
         booking.actualCheckOutTime,
       );
 
-      if (bookingStart == null || bookingEnd == null) {
+      if (booking.status == BookingStatus.completed ||
+          booking.status == BookingStatus.cancelled ||
+          booking.status == BookingStatus.rejected ||
+          actualEnd != null ||
+          bookingStart == null ||
+          bookingEnd == null) {
         continue;
       }
 
@@ -603,7 +602,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                       vertical: screenHeight * 0.015,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.25),
+                      color: Colors.white.withOpacity(0.55),
                       borderRadius: BorderRadius.circular(108),
                     ),
                     child: Row(
@@ -849,7 +848,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
             vertical: screenHeight * 0.003,
           ),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.25),
+            color: Colors.white.withOpacity(0.55),
             borderRadius: BorderRadius.circular(6),
           ),
           child: Row(
@@ -1349,6 +1348,7 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
         barrierDismissible: false,
         builder: (dialogContext) => FeedbackModal(
           booking: widget.booking,
+          roomAmenities: widget.room.amenities,
           onFeedbackSubmitted: () {},
           autoSkipAfter: const Duration(minutes: 1),
         ),

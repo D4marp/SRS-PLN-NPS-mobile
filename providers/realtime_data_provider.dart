@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../models/room_model.dart';
 import '../models/booking_model.dart';
@@ -39,12 +38,7 @@ class RealtimeDataProvider extends ChangeNotifier {
 
   void _initializeStreams() {
     _setupRoomsRealtime();
-    // Only setup bookings stream on web
-    if (kIsWeb) {
-      // booking stream will be setup when user id is available
-    } else {
-      debugPrint('RealtimeDataProvider: bookings realtime disabled (not web)');
-    }
+    // Booking stream is setup when a user id is available.
   }
 
   /// Setup realtime listener untuk rooms via WebSocket
@@ -53,8 +47,7 @@ class RealtimeDataProvider extends ChangeNotifier {
     _clearError();
 
     _allRoomsSubscription?.cancel();
-    _allRoomsSubscription =
-        WebSocketService.watchRooms(city: city).listen(
+    _allRoomsSubscription = WebSocketService.watchRooms(city: city).listen(
       (rooms) {
         _rooms = rooms;
         _setRoomsLoading(false);
@@ -71,23 +64,18 @@ class RealtimeDataProvider extends ChangeNotifier {
 
   /// Setup realtime listener untuk user bookings via WebSocket
   void setupUserBookingsRealtime(String userId) {
-    if (!kIsWeb) {
-      debugPrint('RealtimeDataProvider: setupUserBookingsRealtime skipped (not web)');
-      return;
-    }
-
     _setBookingsLoading(true);
     _clearError();
 
     _userBookingsSubscription?.cancel();
-    _userBookingsSubscription =
-        WebSocketService.watchBookings().listen(
+    _userBookingsSubscription = WebSocketService.watchBookings().listen(
       (bookings) {
         _userBookings = bookings;
         _separateBookings();
         _setBookingsLoading(false);
         notifyListeners();
-        debugPrint('✅ Bookings updated via WebSocket: ${bookings.length} bookings');
+        debugPrint(
+            '✅ Bookings updated via WebSocket: ${bookings.length} bookings');
       },
       onError: (error) {
         debugPrint('❌ Error in bookings stream: $error');
@@ -148,7 +136,7 @@ class RealtimeDataProvider extends ChangeNotifier {
     try {
       _clearError();
       resetToAllRooms();
-      if (userId != null && kIsWeb) {
+      if (userId != null) {
         setupUserBookingsRealtime(userId);
       }
       debugPrint('🔄 All data refreshed');
