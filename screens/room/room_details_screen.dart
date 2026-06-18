@@ -8,6 +8,7 @@ import '../../models/user_model.dart';
 import '../../providers/booking_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_theme.dart';
+import '../../widgets/app_version_label.dart';
 import '../../core/gen/assets.gen.dart';
 import '../booking/booking_form_screen.dart';
 import '../../services/api_booking_service.dart';
@@ -469,6 +470,21 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                 // Main Content
                 SafeArea(
                   child: _buildMainContent(),
+                ),
+
+                // App version
+                Positioned(
+                  left: 16,
+                  bottom: 8,
+                  child: AppVersionLabel(
+                    textAlign: TextAlign.left,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: MediaQuery.of(context).size.width * 0.009,
+                      fontFamily: 'Arial',
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1374,7 +1390,7 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
         ),
       );
 
-      // Jika user cancel feedback, jangan lanjut checkout
+      // Hanya lanjut checkout jika feedback benar-benar terkirim.
       if (feedbackSubmitted != true) {
         return;
       }

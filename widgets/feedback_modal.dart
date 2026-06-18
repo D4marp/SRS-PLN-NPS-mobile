@@ -75,7 +75,8 @@ class _FeedbackModalState extends State<FeedbackModal> {
       if (!mounted) {
         return;
       }
-      Navigator.of(context).pop(true);
+      // Jangan lanjut checkout jika feedback tidak terkirim.
+      Navigator.of(context).pop(false);
     });
   }
 
@@ -589,7 +590,10 @@ class _FeedbackModalState extends State<FeedbackModal> {
                         child: OutlinedButton(
                           onPressed: _isLoading || _showApology
                               ? null
-                              : () => Navigator.of(context).pop(),
+                              : () {
+                                  _cancelAutoSkipTimer();
+                                  Navigator.of(context).pop(false);
+                                },
                           child: const Text('Batal'),
                         ),
                       ),
@@ -634,9 +638,13 @@ class _FeedbackModalState extends State<FeedbackModal> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 OutlinedButton(
-                  onPressed:
-                      _isLoading ? null : () => Navigator.of(context).pop(true),
-                  child: const Text('Tutup'),
+                  onPressed: _isLoading
+                      ? null
+                      : () {
+                          _cancelAutoSkipTimer();
+                          Navigator.of(context).pop(false);
+                        },
+                  child: const Text('Batal'),
                 ),
               ],
             ],
