@@ -93,10 +93,9 @@ class _LoginScreenState extends State<LoginScreen>
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Background Image - Same as Home
+        // Background Image - same as room details
         Positioned.fill(
-          child: Image(
-            image: Assets.images.homeBg.provider(),
+          child: Assets.images.bgPLN.image(
             fit: BoxFit.cover,
           ),
         ),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/booking_model.dart';
 import '../services/api_booking_service.dart';
+import '../services/websocket_service.dart';
 import '../utils/app_theme.dart';
 import '../core/gen/assets.gen.dart';
 
@@ -58,6 +59,7 @@ class _FeedbackModalState extends State<FeedbackModal> {
   bool _showApology = false;
   bool _showThankYou = false;
   Timer? _autoSkipTimer;
+  Timer? _autoCloseTimer;
 
   @override
   void initState() {
@@ -86,9 +88,14 @@ class _FeedbackModalState extends State<FeedbackModal> {
   }
 
   void _startAutoClose() {
-    Future.delayed(const Duration(seconds: 3), () {
+    _autoCloseTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) Navigator.of(context).pop(true);
     });
+  }
+
+  void _cancelAutoCloseTimer() {
+    _autoCloseTimer?.cancel();
+    _autoCloseTimer = null;
   }
 
   bool get _isReasonValid {
@@ -174,6 +181,13 @@ class _FeedbackModalState extends State<FeedbackModal> {
   Future<void> _submitFeedback({required bool keepOpen}) async {
     if (!_canSubmit) return;
 
+    if (WebSocketService.connectionState.value == 'disconnected') {
+      setState(() {
+        _errorMessage = 'Koneksi terputus. Silakan coba beberapa saat lagi.';
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -222,6 +236,7 @@ class _FeedbackModalState extends State<FeedbackModal> {
   @override
   void dispose() {
     _cancelAutoSkipTimer();
+    _cancelAutoCloseTimer();
     _otherComplaintController.dispose();
     super.dispose();
   }
@@ -271,7 +286,10 @@ class _FeedbackModalState extends State<FeedbackModal> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(true),
+                  onPressed: () {
+                    _cancelAutoCloseTimer();
+                    Navigator.of(context).pop(true);
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.successGreen,
                   ),
@@ -292,364 +310,381 @@ class _FeedbackModalState extends State<FeedbackModal> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header
-              Text(
-                'Kepuasan Layanan',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 30,
-                      color: AppColors.primaryText,
-                    ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'Berikan penilaian layanan ruangan untuk booking ini',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.secondaryText,
-                    ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-
-              // Image buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  GestureDetector(
-                    onTap: _isLoading ? null : _handleSatisfiedTap,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 210,
-                          height: 210,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: _selectedSatisfaction == 'satisfied'
-                                  ? AppColors.successGreen
-                                  : AppColors.borderColor,
-                              width:
-                                  _selectedSatisfaction == 'satisfied' ? 3 : 2,
-                            ),
-                            color: _selectedSatisfaction == 'satisfied'
-                                ? AppColors.successGreenLight
-                                : Colors.transparent,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: Assets.images.puas.image(
-                              width: 165,
-                              height: 165,
-                            ),
-                          ),
+                  // Header
+                  Text(
+                    'Kepuasan Layanan',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 30,
+                          color: AppColors.primaryText,
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Puas',
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: AppColors.primaryText,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 20,
-                                  ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
                   ),
-                  GestureDetector(
-                    onTap: _isLoading
-                        ? null
-                        : () {
-                            setState(() {
-                              _selectedSatisfaction = 'unsatisfied';
-                              _showApology = false;
-                            });
-                          },
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 210,
-                          height: 210,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: _selectedSatisfaction == 'unsatisfied'
-                                  ? AppColors.errorRed
-                                  : AppColors.borderColor,
-                              width: _selectedSatisfaction == 'unsatisfied'
-                                  ? 3
-                                  : 2,
-                            ),
-                            color: _selectedSatisfaction == 'unsatisfied'
-                                ? AppColors.errorRedLight
-                                : Colors.transparent,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: Assets.images.kurangPuas.image(
-                              width: 165,
-                              height: 165,
-                            ),
-                          ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    'Berikan penilaian layanan ruangan untuk booking ini',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.secondaryText,
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Tidak Puas',
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: AppColors.primaryText,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 20,
-                                  ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
+                    textAlign: TextAlign.center,
                   ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
+                  const SizedBox(height: AppSpacing.lg),
 
-              // If satisfaction selected, show reason text area
-              if (_selectedSatisfaction != null) ...[
-                // Complaint tags (only for unsatisfied)
-                if (_selectedSatisfaction == 'unsatisfied' &&
-                    !_showApology) ...[
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Kendala yang dialami:',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.primaryText,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
+                  // Image buttons
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      GestureDetector(
+                        onTap: _isLoading ? null : _handleSatisfiedTap,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 210,
+                              height: 210,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _selectedSatisfaction == 'satisfied'
+                                      ? AppColors.successGreen
+                                      : AppColors.borderColor,
+                                  width:
+                                      _selectedSatisfaction == 'satisfied' ? 3 : 2,
+                                ),
+                                color: _selectedSatisfaction == 'satisfied'
+                                    ? AppColors.successGreenLight
+                                    : Colors.transparent,
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(10),
+                                child: Assets.images.puas.image(
+                                  width: 165,
+                                  height: 165,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Puas',
+                              style:
+                                  Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: AppColors.primaryText,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 20,
+                                      ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _isLoading
+                            ? null
+                            : () {
+                                setState(() {
+                                  _selectedSatisfaction = 'unsatisfied';
+                                  _showApology = false;
+                                });
+                              },
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 210,
+                              height: 210,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _selectedSatisfaction == 'unsatisfied'
+                                      ? AppColors.errorRed
+                                      : AppColors.borderColor,
+                                  width: _selectedSatisfaction == 'unsatisfied'
+                                      ? 3
+                                      : 2,
+                                ),
+                                color: _selectedSatisfaction == 'unsatisfied'
+                                    ? AppColors.errorRedLight
+                                    : Colors.transparent,
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(10),
+                                child: Assets.images.kurangPuas.image(
+                                  width: 165,
+                                  height: 165,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Tidak Puas',
+                              style:
+                                  Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: AppColors.primaryText,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 20,
+                                      ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Pilih fasilitas ruangan yang rusak, lalu tambahkan opsi lainnya jika perlu.',
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // If satisfaction selected, show reason text area
+                  if (_selectedSatisfaction != null) ...[
+                    // Complaint tags (only for unsatisfied)
+                    if (_selectedSatisfaction == 'unsatisfied' &&
+                        !_showApology) ...[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Kendala yang dialami:',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppColors.primaryText,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Pilih fasilitas ruangan yang rusak, lalu tambahkan opsi lainnya jika perlu.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppColors.secondaryText,
+                                fontStyle: FontStyle.italic,
+                              ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      _complaintTags.isEmpty
+                          ? Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Tidak ada data fasilitas untuk komplain.',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: AppColors.secondaryText,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                              ),
+                            )
+                          : Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _complaintTags.map((tag) {
+                                final isSelected = _selectedTags.contains(tag);
+                                return FilterChip(
+                                  label: Text(
+                                    tag,
+                                    style: TextStyle(
+                                      color: isSelected
+                                          ? Colors.white
+                                          : AppColors.primaryText,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  selected: isSelected,
+                                  onSelected: (selected) {
+                                    setState(() {
+                                      if (selected) {
+                                        _selectedTags.add(tag);
+                                      } else {
+                                        _selectedTags.remove(tag);
+                                      }
+                                    });
+                                  },
+                                  selectedColor: AppColors.errorRed,
+                                  checkmarkColor: Colors.white,
+                                  backgroundColor: Colors.grey.shade100,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20),
+                                    side: BorderSide(
+                                      color: isSelected
+                                          ? AppColors.errorRed
+                                          : Colors.grey.shade300,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                      const SizedBox(height: AppSpacing.md),
+                    ],
+
+                    // Show apology or simple note
+                    if (_showApology) ...[
+                      Container(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        decoration: BoxDecoration(
+                          color: AppColors.errorRedLight,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.errorRed),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Mohon Maaf atas Ketidaknyamanan Anda',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                    color: AppColors.errorRed,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              'Laporan Anda mengenai fasilitas yang rusak telah kami terima. '
+                              'Tim teknisi kami akan segera memeriksa dan memperbaikinya agar ruangan kembali nyaman digunakan.',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: AppColors.primaryText,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                    ] else ...[
+                      // Text field for other comments (only for unsatisfied)
+                      if (_selectedSatisfaction == 'unsatisfied') ...[
+                        TextField(
+                          controller: _otherComplaintController,
+                          maxLines: 3,
+                          decoration: InputDecoration(
+                            hintText:
+                                'Tuliskan kendala lainnya secara detail di sini...',
+                            hintStyle: TextStyle(color: Colors.grey.shade400),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide:
+                                  const BorderSide(color: AppColors.errorRed),
+                            ),
+                            contentPadding:
+                                const EdgeInsets.all(AppSpacing.md),
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                      ],
+                    ],
+
+                    // Display error message
+                    if (_errorMessage != null) ...[
+                      Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.red, fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
+
+                    // Cancel & Submit Buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _isLoading
+                                ? null
+                                : () {
+                                    _cancelAutoSkipTimer();
+                                    Navigator.of(context).pop(false);
+                                  },
+                            child: const Text('Batal'),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  _selectedSatisfaction == 'satisfied'
+                                      ? AppColors.successGreen
+                                      : AppColors.errorRed,
+                              disabledBackgroundColor: Colors.grey.shade300,
+                            ),
+                            onPressed: _showApology
+                                ? () {
+                                    _cancelAutoCloseTimer();
+                                    Navigator.of(context).pop(true);
+                                  }
+                                : (_canSubmit
+                                    ? () => _submitFeedback(keepOpen: true)
+                                    : null),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                : Text(
+                                    _showApology ? 'Tutup' : 'Kirim',
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    Text(
+                      'Pilih salah satu untuk lanjut',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: AppColors.secondaryText,
                             fontStyle: FontStyle.italic,
                           ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _complaintTags.isEmpty
-                      ? Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Ruangan ini belum memiliki fasilitas terdaftar.',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppColors.secondaryText,
-                                ),
-                          ),
-                        )
-                      : Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _complaintTags.map((tag) {
-                      final selected = _selectedTags.contains(tag);
-                      return FilterChip(
-                        label: Text(tag),
-                        selected: selected,
-                        onSelected: _isLoading
-                            ? null
-                            : (val) {
-                                setState(() {
-                                  if (val) {
-                                    _selectedTags.add(tag);
-                                  } else {
-                                    _selectedTags.remove(tag);
-                                  }
-                                });
-                              },
-                        selectedColor: AppColors.errorRedLight,
-                        checkmarkColor: AppColors.errorRed,
-                        labelStyle: TextStyle(
-                          color: selected
-                              ? AppColors.errorRed
-                              : AppColors.primaryText,
-                          fontWeight:
-                              selected ? FontWeight.w600 : FontWeight.normal,
-                          fontSize: 12,
-                        ),
-                        side: BorderSide(
-                          color: selected
-                              ? AppColors.errorRed
-                              : AppColors.borderColor,
-                          width: selected ? 1.5 : 1,
-                        ),
-                        backgroundColor: AppColors.creamBackground,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  TextField(
-                    controller: _otherComplaintController,
-                    enabled: !_isLoading,
-                    maxLines: 3,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      labelText: 'Lainnya',
-                      hintText: 'Tulis kendala manual jika tidak ada di daftar',
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide:
-                            const BorderSide(color: AppColors.borderColor),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide:
-                            const BorderSide(color: AppColors.borderColor),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(
-                            color: AppColors.primaryRed, width: 1.5),
-                      ),
+                    const SizedBox(height: AppSpacing.md),
+                    OutlinedButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              _cancelAutoSkipTimer();
+                              Navigator.of(context).pop(false);
+                            },
+                      child: const Text('Batal'),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
+                  ],
                 ],
-
-                if (_selectedSatisfaction == 'unsatisfied' && _showApology) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    decoration: BoxDecoration(
-                      color: AppColors.creamBackground,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.borderColor),
-                    ),
-                    child: Text(
-                      'Mohon maaf atas ketidaknyamanan yang Anda alami. '
-                      'Kami akan menindaklanjuti keluhan ini secepatnya.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppColors.primaryText,
-                            fontWeight: FontWeight.w600,
-                          ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                ],
-
-                // Error message
-                if (_errorMessage != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(AppSpacing.sm),
-                    decoration: BoxDecoration(
-                      color: AppColors.errorRedLight,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(
-                        color: AppColors.errorRed,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                ],
-
-                // Validation message
-                if (!_isReasonValid && _selectedSatisfaction == 'unsatisfied')
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                    child: Text(
-                      'Pilih minimal satu kendala',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.errorRed,
-                          ),
-                    ),
-                  ),
-
-                // Actions
-                if (_selectedSatisfaction == 'unsatisfied')
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _isLoading || _showApology
-                              ? null
-                              : () {
-                                  _cancelAutoSkipTimer();
-                                  Navigator.of(context).pop(false);
-                                },
-                          child: const Text('Batal'),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _showApology
-                              ? () => Navigator.of(context).pop(true)
-                              : (_canSubmit
-                                  ? () => _submitFeedback(keepOpen: true)
-                                  : null),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primaryRed,
-                            disabledBackgroundColor: AppColors.borderColor,
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
-                                    ),
-                                  ),
-                                )
-                              : Text(
-                                  _showApology ? 'Tutup' : 'Kirim',
-                                  style: const TextStyle(color: Colors.white),
-                                ),
-                        ),
-                      ),
-                    ],
-                  ),
-              ] else ...[
-                Text(
-                  'Pilih salah satu untuk lanjut',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.secondaryText,
-                        fontStyle: FontStyle.italic,
-                      ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                OutlinedButton(
-                  onPressed: _isLoading
-                      ? null
-                      : () {
-                          _cancelAutoSkipTimer();
-                          Navigator.of(context).pop(false);
-                        },
-                  child: const Text('Batal'),
-                ),
-              ],
-            ],
+              ),
+            ),
           ),
-        ),
+          Positioned(
+            right: 8,
+            top: 8,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: AppColors.primaryText),
+              onPressed: () {
+                _cancelAutoSkipTimer();
+                _cancelAutoCloseTimer();
+                Navigator.of(context).pop(false);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

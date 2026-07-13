@@ -12,7 +12,9 @@ import '../../widgets/app_version_label.dart';
 import '../../core/gen/assets.gen.dart';
 import '../booking/booking_form_screen.dart';
 import '../../services/api_booking_service.dart';
+import '../../services/websocket_service.dart';
 import '../../widgets/feedback_modal.dart';
+import '../../widgets/connection_status_widget.dart';
 
 // Event-driven data class untuk booking updates
 class BookingUpdateEvent {
@@ -45,11 +47,16 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
   late Timer _timeUpdateTimer;
   late ValueNotifier<DateTime> _timeNotifier;
   late StreamController<BookingUpdateEvent> _bookingEventController;
+  late Stream<List<BookingModel>> _roomBookingsStream;
+  StreamSubscription<List<BookingModel>>? _bookingsSubscription;
 
   // Cache untuk menghindari rebuild berlebihan
   List<BookingModel>? _cachedBookings;
   List<BookingModel>? _cachedScheduleBookings;
   DateTime? _lastBookingUpdateTime;
+
+  // Track auto checkout calls to avoid duplicate concurrent API calls
+  final Set<String> _pendingAutoCheckOuts = {};
 
   @override
   void initState() {
@@ -70,12 +77,40 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     // Initialize booking event controller
     _bookingEventController = StreamController<BookingUpdateEvent>.broadcast();
 
+    // Initialize room bookings stream
+    _roomBookingsStream = context
+        .read<BookingProvider>()
+        .watchBookingsByRoomIdStream(widget.room.id);
+
+    // Listen to changes for debugging and potential side effects
+    _bookingsSubscription = _roomBookingsStream.listen((bookings) {
+      debugPrint('🔔 Event-Driven: Updated bookings list received for Room ${widget.room.id}: ${bookings.length} items');
+    });
+
     // Update time every 1 second for smooth real-time clock display
     _timeUpdateTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
-        _timeNotifier.value = DateTime.now();
+        final now = DateTime.now();
+        _timeNotifier.value = now;
+        _checkAndTriggerAutoCheckOut(now);
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant RoomDetailsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.room.id != widget.room.id) {
+      debugPrint('🔄 Room ID changed from ${oldWidget.room.id} to ${widget.room.id}, recreating stream');
+      _pendingAutoCheckOuts.clear(); // Clear pending cache when room switches
+      _bookingsSubscription?.cancel();
+      _roomBookingsStream = context
+          .read<BookingProvider>()
+          .watchBookingsByRoomIdStream(widget.room.id);
+      _bookingsSubscription = _roomBookingsStream.listen((bookings) {
+        debugPrint('🔔 Event-Driven: Updated bookings list received for Room ${widget.room.id}: ${bookings.length} items');
+      });
+    }
   }
 
   List<BookingModel> _filterBookingsForToday(List<BookingModel> bookings) {
@@ -95,7 +130,8 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
   }
 
   List<BookingModel> _filterIncompleteBookings(List<BookingModel> bookings) {
-    return bookings.where((booking) {
+    final todayBookings = _filterBookingsForToday(bookings);
+    return todayBookings.where((booking) {
       if (booking.status == BookingStatus.cancelled ||
           booking.status == BookingStatus.rejected ||
           booking.status == BookingStatus.completed) {
@@ -152,6 +188,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     _timeUpdateTimer.cancel();
     _timeNotifier.dispose();
     _bookingEventController.close();
+    _bookingsSubscription?.cancel();
     super.dispose();
   }
 
@@ -194,6 +231,9 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
       if (currentTime.isAfter(actualStart) ||
           currentTime.isAtSameMomentAs(actualStart)) {
         if (currentTime.isAfter(bookingEnd)) {
+          if (currentTime.isAfter(checkoutGraceEnd)) {
+            return 'Completed';
+          }
           return 'Awaiting Check-out';
         }
         return 'Ongoing';
@@ -206,8 +246,10 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     if (currentTime.isBefore(bookingStart)) {
       return 'Upcoming';
     }
-    if (currentTime.isAfter(bookingEnd) ||
-        _isAtOrAfter(currentTime, checkoutGraceEnd)) {
+    if (currentTime.isAfter(bookingEnd)) {
+      if (currentTime.isAfter(checkoutGraceEnd)) {
+        return 'Completed';
+      }
       return 'Awaiting Check-out';
     }
     return 'Ongoing';
@@ -215,6 +257,76 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
 
   bool _isAtOrAfter(DateTime value, DateTime compareTo) {
     return value.isAfter(compareTo) || value.isAtSameMomentAs(compareTo);
+  }
+
+  void _checkAndTriggerAutoCheckOut(DateTime now) {
+    // Skip auto-checkout attempts if connection is offline
+    if (WebSocketService.connectionState.value == 'disconnected') {
+      return;
+    }
+
+    if (_cachedScheduleBookings == null || _cachedScheduleBookings!.isEmpty) {
+      return;
+    }
+
+    for (final booking in _cachedScheduleBookings!) {
+      // Skip if already manually checked out or marked completed/cancelled/rejected
+      if (booking.actualCheckOutTime?.isNotEmpty == true ||
+          booking.status == BookingStatus.completed ||
+          booking.status == BookingStatus.cancelled ||
+          booking.status == BookingStatus.rejected) {
+        continue;
+      }
+
+      final bookingEnd = _parseTimeOnDate(
+        booking.bookingDate,
+        booking.checkOutTime,
+      );
+      if (bookingEnd == null) continue;
+
+      final checkoutGraceEnd = bookingEnd.add(_checkoutGracePeriod);
+
+      // If current time is past the grace period (30 minutes after checkout time)
+      if (now.isAfter(checkoutGraceEnd) && !_pendingAutoCheckOuts.contains(booking.id)) {
+        debugPrint('⏰ Auto check-out triggered for booking ID: ${booking.id}');
+        _pendingAutoCheckOuts.add(booking.id);
+        _performAutoCheckOut(booking);
+      }
+    }
+  }
+
+  Future<void> _performAutoCheckOut(BookingModel booking) async {
+    try {
+      final now = DateTime.now();
+      final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      
+      await ApiBookingService.submitCheckInCheckOut(
+        bookingId: booking.id,
+        actualCheckInTime: null,
+        actualCheckOutTime: timeStr,
+        markComplete: true,
+      );
+
+      debugPrint('✅ Auto check-out successful for booking ID: ${booking.id}');
+
+      if (mounted) {
+        // Refresh room bookings to update the UI
+        try {
+          await context
+              .read<BookingProvider>()
+              .forceRefreshRoomBookings(booking.roomId);
+        } catch (e) {
+          debugPrint('Warning: Auto refresh failed: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Auto check-out failed for booking ID: ${booking.id}: $e');
+    } finally {
+      // Remove from pending set after a delay to prevent immediate retries
+      Future.delayed(const Duration(minutes: 1), () {
+        _pendingAutoCheckOuts.remove(booking.id);
+      });
+    }
   }
 
   bool _isActiveScheduleStatus(String statusText) {
@@ -378,6 +490,98 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     return 'Tidak ada rapat berjalan';
   }
 
+  String _getCurrentFreeRange(List<BookingModel> bookings, DateTime currentTime) {
+    final todayBookings = _filterBookingsForToday(bookings);
+
+    // Filter active/confirmed/pending bookings today (exclude cancelled/rejected/completed/checked-out)
+    final activeBookings = todayBookings.where((b) {
+      if (b.status == BookingStatus.cancelled ||
+          b.status == BookingStatus.rejected ||
+          b.status == BookingStatus.completed ||
+          b.actualCheckOutTime?.isNotEmpty == true) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    final startStr = '${currentTime.hour.toString().padLeft(2, '0')}.${currentTime.minute.toString().padLeft(2, '0')}';
+
+    if (activeBookings.isEmpty) {
+      return '$startStr - 24.00';
+    }
+
+    // Parse times
+    final List<({DateTime start, DateTime end})> slots = [];
+    for (final b in activeBookings) {
+      final start = _parseTimeOnDate(b.bookingDate, b.checkInTime);
+      final end = _parseTimeOnDate(b.bookingDate, b.checkOutTime);
+      if (start != null && end != null) {
+        slots.add((start: start, end: end));
+      }
+    }
+
+    if (slots.isEmpty) {
+      return '$startStr - 24.00';
+    }
+
+    // Sort by start time
+    slots.sort((a, b) => a.start.compareTo(b.start));
+
+    // Define day boundaries
+    final startOfDay = DateTime(currentTime.year, currentTime.month, currentTime.day, 0, 0);
+    // Use hour 23, minute 59, second 59 to avoid day rollover
+    final endOfDay = DateTime(currentTime.year, currentTime.month, currentTime.day, 23, 59, 59);
+
+    // Compute gaps
+    final List<({DateTime start, DateTime end})> gaps = [];
+
+    // Gap from start of day to first booking
+    if (slots.first.start.isAfter(startOfDay)) {
+      gaps.add((start: startOfDay, end: slots.first.start));
+    }
+
+    // Gaps between bookings
+    for (int i = 0; i < slots.length - 1; i++) {
+      if (slots[i].end.isBefore(slots[i + 1].start)) {
+        gaps.add((start: slots[i].end, end: slots[i + 1].start));
+      }
+    }
+
+    // Gap from last booking to end of day
+    if (slots.last.end.isBefore(endOfDay)) {
+      gaps.add((start: slots.last.end, end: endOfDay));
+    }
+
+    // Find gap containing or after currentTime
+    for (final gap in gaps) {
+      final isLastGap = gap.end == endOfDay;
+      if (currentTime.isBefore(gap.end)) {
+        final effectiveStart = gap.start.isBefore(currentTime) ? currentTime : gap.start;
+        final gapStartStr = '${effectiveStart.hour.toString().padLeft(2, '0')}.${effectiveStart.minute.toString().padLeft(2, '0')}';
+        final endStr = isLastGap
+            ? '24.00'
+            : '${gap.end.hour.toString().padLeft(2, '0')}.${gap.end.minute.toString().padLeft(2, '0')}';
+        return '$gapStartStr - $endStr';
+      }
+    }
+
+    // Fallback
+    return '$startStr - 24.00';
+  }
+
+  String _getNextFreeRangeAfterOngoing(List<BookingModel> bookings, BookingModel ongoing, DateTime currentTime) {
+    final endOfOngoing = _parseTimeOnDate(ongoing.bookingDate, ongoing.checkOutTime);
+    if (endOfOngoing == null) {
+      return '';
+    }
+    final range = _getCurrentFreeRange(bookings, endOfOngoing);
+    if (range.isEmpty) {
+      final startStr = '${endOfOngoing.hour.toString().padLeft(2, '0')}.${endOfOngoing.minute.toString().padLeft(2, '0')}';
+      return '$startStr - 24.00';
+    }
+    return range;
+  }
+
   // Event-driven method: dipanggil hanya saat booking data berubah
   void _onBookingDataChanged(List<BookingModel> bookings) {
     _lastBookingUpdateTime = DateTime.now();
@@ -486,12 +690,34 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                     ),
                   ),
                 ),
+
+                // Connection Status
+                const Positioned(
+                  right: 16,
+                  bottom: 8,
+                  child: ConnectionStatusWidget(),
+                ),
               ],
             ),
           ),
         );
       },
     );
+  }
+
+  String _roomLocationLabel() {
+    final location = widget.room.location.trim();
+    final city = widget.room.city.trim();
+    final cityIsUnknown =
+        city.isEmpty || city.toLowerCase() == 'unknown';
+
+    if (location.isNotEmpty) {
+      return location;
+    }
+    if (!cityIsUnknown) {
+      return city;
+    }
+    return '';
   }
 
   Widget _buildMainContent() {
@@ -507,6 +733,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
           SizedBox(
             width: screenWidth * 0.35,
             child: SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -518,10 +745,10 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                       fit: BoxFit.contain,
                     ),
                   ),
-                  SizedBox(height: screenHeight * 0.018),
+                  SizedBox(height: screenHeight * 0.015),
                   // Room Image
                   Container(
-                    height: screenHeight * 0.35,
+                    height: screenHeight * 0.31,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(20),
                     ),
@@ -576,63 +803,63 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                             ),
                           ),
                   ),
-                  SizedBox(height: screenHeight * 0.025),
+                  SizedBox(height: screenHeight * 0.022),
                   // Room Name
                   Text(
                     widget.room.name,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: screenWidth * 0.03,
+                      fontSize: screenWidth * 0.022,
                       fontFamily: 'Arial',
                       fontWeight: FontWeight.w700,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    softWrap: true,
                   ),
-                  SizedBox(height: screenHeight * 0.015),
-                  // Location
+                  SizedBox(height: screenHeight * 0.01),
+                  // Location — tanpa "Unknown"; teks panjang ditampilkan di samping ikon
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
                         Icons.location_on,
                         color: Colors.white,
-                        size: screenWidth * 0.017,
+                        size: screenWidth * 0.014,
                       ),
-                      SizedBox(width: screenWidth * 0.006),
+                      SizedBox(width: screenWidth * 0.008),
                       Expanded(
                         child: Text(
-                          '${widget.room.location}, ${widget.room.city}',
+                          _roomLocationLabel(),
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: screenWidth * 0.0125,
+                            fontSize: screenWidth * 0.011,
                             fontFamily: 'Arial',
                             fontWeight: FontWeight.w600,
+                            height: 1.35,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          softWrap: true,
                         ),
                       ),
                     ],
                   ),
-                  SizedBox(height: screenHeight * 0.025),
-                  // Facility
+                  SizedBox(height: screenHeight * 0.035),
+                  // Capacity Title
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
                       'Capacity:',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: screenWidth * 0.0125,
+                        fontSize: screenWidth * 0.011,
                         fontFamily: 'Arial',
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
-                  SizedBox(height: screenHeight * 0.012),
+                  SizedBox(height: screenHeight * 0.008),
                   Container(
                     padding: EdgeInsets.symmetric(
-                      horizontal: screenWidth * 0.015,
-                      vertical: screenHeight * 0.015,
+                      horizontal: screenWidth * 0.01,
+                      vertical: screenHeight * 0.008,
                     ),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.55),
@@ -643,7 +870,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                       children: [
                         Icon(
                           Icons.people,
-                          size: screenWidth * 0.018,
+                          size: screenWidth * 0.014,
                           color: Colors.black,
                         ),
                         SizedBox(width: screenWidth * 0.006),
@@ -651,7 +878,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                           '${widget.room.maxGuests} Guests',
                           style: TextStyle(
                             color: Colors.black,
-                            fontSize: screenWidth * 0.0127,
+                            fontSize: screenWidth * 0.01,
                             fontFamily: 'Arial',
                             fontWeight: FontWeight.w600,
                           ),
@@ -659,18 +886,18 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                       ],
                     ),
                   ),
-                  SizedBox(height: screenHeight * 0.025),
-                  // Facility
+                  SizedBox(height: screenHeight * 0.035),
+                  // Facilities Title
                   Text(
                     'Facilities:',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: screenWidth * 0.0125,
+                      fontSize: screenWidth * 0.011,
                       fontFamily: 'Arial',
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  SizedBox(height: screenHeight * 0.012),
+                  SizedBox(height: screenHeight * 0.008),
                   _buildFacilitiesSection(screenWidth, screenHeight),
                 ],
               ),
@@ -691,9 +918,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                   // Badge (OCCUPIED/AVAILABLE) sits in top-right corner via Stack
                   // so the title can use full width without collision.
                   StreamBuilder<List<BookingModel>>(
-                    stream: context
-                        .read<BookingProvider>()
-                        .watchBookingsByRoomIdStream(widget.room.id),
+                    stream: _roomBookingsStream,
                     builder: (context, snapshot) {
                       return ValueListenableBuilder<DateTime>(
                         valueListenable: _timeNotifier,
@@ -703,14 +928,33 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                           if (snapshot.hasData && snapshot.data != null) {
                             final todayBookings =
                                 _filterBookingsForToday(snapshot.data ?? []);
-                            for (final booking in todayBookings) {
-                              if (_isOngoingForRoomStatus(
-                                booking,
-                                currentTime,
-                              )) {
-                                ongoingBooking = booking;
-                                break;
-                              }
+                            
+                            final candidates = todayBookings.where((booking) {
+                              return _isOngoingForRoomStatus(booking, currentTime);
+                            }).toList();
+
+                            if (candidates.isNotEmpty) {
+                              candidates.sort((a, b) {
+                                final statusA = _getBookingStatusText(a, currentTime);
+                                final statusB = _getBookingStatusText(b, currentTime);
+                                
+                                // Prioritize 'Ongoing' over 'Awaiting Check-out'
+                                if (statusA == 'Ongoing' && statusB != 'Ongoing') {
+                                  return -1;
+                                }
+                                if (statusB == 'Ongoing' && statusA != 'Ongoing') {
+                                  return 1;
+                                }
+                                
+                                // If status is the same, prioritize the newer meeting (later start time)
+                                final startA = _parseTimeOnDate(a.bookingDate, a.checkInTime);
+                                final startB = _parseTimeOnDate(b.bookingDate, b.checkInTime);
+                                if (startA != null && startB != null) {
+                                  return startB.compareTo(startA);
+                                }
+                                return 0;
+                              });
+                              ongoingBooking = candidates.first;
                             }
                           }
 
@@ -720,32 +964,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                           if (!hasOngoingMeeting &&
                               snapshot.hasData &&
                               snapshot.data != null) {
-                            final todayBookings =
-                                _filterBookingsForToday(snapshot.data!);
-                            DateTime? nextStart;
-                            for (var b in todayBookings) {
-                              if (!_shouldShowBookingInSchedule(
-                                b,
-                                currentTime,
-                              )) {
-                                continue;
-                              }
-                              final start = _parseTimeOnDate(
-                                  b.bookingDate, b.checkInTime);
-                              if (start != null && start.isAfter(currentTime)) {
-                                if (nextStart == null ||
-                                    start.isBefore(nextStart)) {
-                                  nextStart = start;
-                                }
-                              }
-                            }
-                            final now = currentTime;
-                            final startStr =
-                                '${now.hour.toString().padLeft(2, '0')}.${now.minute.toString().padLeft(2, '0')}';
-                            final endStr = nextStart != null
-                                ? '${nextStart.hour.toString().padLeft(2, '0')}.${nextStart.minute.toString().padLeft(2, '0')}'
-                                : '24.00';
-                            availabilityHeader = '$startStr - $endStr';
+                            availabilityHeader = _getCurrentFreeRange(snapshot.data!, currentTime);
                           }
 
                           final meetingTitle = hasOngoingMeeting
@@ -800,6 +1019,21 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
                                         meetingPihakLine,
                                         style: TextStyle(
                                           color: const Color(0xFFEFE62F),
+                                          fontSize: screenWidth * 0.012,
+                                          fontFamily: 'Arial',
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                        softWrap: true,
+                                      ),
+                                    ],
+                                    if (hasOngoingMeeting &&
+                                        snapshot.hasData &&
+                                        snapshot.data != null) ...[
+                                      SizedBox(height: screenHeight * 0.005),
+                                      Text(
+                                        'Waktu Bisa Booking: ${_getNextFreeRangeAfterOngoing(snapshot.data!, ongoingBooking!, currentTime)}',
+                                        style: TextStyle(
+                                          color: Colors.white,
                                           fontSize: screenWidth * 0.012,
                                           fontFamily: 'Arial',
                                           fontWeight: FontWeight.w700,
@@ -864,7 +1098,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
         'Belum ada fasilitas terdaftar',
         style: TextStyle(
           color: Colors.white70,
-          fontSize: screenWidth * 0.0115,
+          fontSize: screenWidth * 0.01,
           fontFamily: 'Arial',
           fontWeight: FontWeight.w500,
         ),
@@ -872,13 +1106,13 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     }
 
     return Wrap(
-      spacing: screenWidth * 0.01,
+      spacing: screenWidth * 0.008,
       runSpacing: screenHeight * 0.004,
       children: amenities.map((item) {
         return Container(
           padding: EdgeInsets.symmetric(
-            horizontal: screenWidth * 0.008,
-            vertical: screenHeight * 0.003,
+            horizontal: screenWidth * 0.006,
+            vertical: screenHeight * 0.002,
           ),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.55),
@@ -887,13 +1121,11 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // On mobile app we render facilities without icon per request
-              // (website will keep icons). Only show text here.
               Text(
                 item,
                 style: TextStyle(
                   color: Colors.black,
-                  fontSize: screenWidth * 0.009,
+                  fontSize: screenWidth * 0.008,
                   fontFamily: 'Arial',
                   fontWeight: FontWeight.w600,
                 ),
@@ -926,9 +1158,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
 
   Widget _buildAvailabilityStatus(double screenWidth, double screenHeight) {
     return StreamBuilder<List<BookingModel>>(
-      stream: context
-          .read<BookingProvider>()
-          .watchBookingsByRoomIdStream(widget.room.id),
+      stream: _roomBookingsStream,
       builder: (context, snapshot) {
         return ValueListenableBuilder<DateTime>(
           valueListenable: _timeNotifier,
@@ -969,25 +1199,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
 
               // If available, compute range until next booking start (today), otherwise until 24:00
               if (isAvailable) {
-                DateTime? nextStart;
-                for (var b in todayBookings) {
-                  if (!_shouldShowBookingInSchedule(b, currentTime)) {
-                    continue;
-                  }
-                  final start = _parseTimeOnDate(b.bookingDate, b.checkInTime);
-                  if (start != null && start.isAfter(currentTime)) {
-                    if (nextStart == null || start.isBefore(nextStart)) {
-                      nextStart = start;
-                    }
-                  }
-                }
-                final now = currentTime;
-                final startStr =
-                    '${now.hour.toString().padLeft(2, '0')}.${now.minute.toString().padLeft(2, '0')}';
-                final endStr = nextStart != null
-                    ? '${nextStart.hour.toString().padLeft(2, '0')}.${nextStart.minute.toString().padLeft(2, '0')}'
-                    : '24.00';
-                availabilityRange = '$startStr - $endStr';
+                availabilityRange = _getCurrentFreeRange(snapshot.data!, currentTime);
               }
             }
 
@@ -1059,10 +1271,8 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
-    final bookingProvider = context.watch<BookingProvider>();
-
     return StreamBuilder<List<BookingModel>>(
-      stream: bookingProvider.watchBookingsByRoomIdStream(widget.room.id),
+      stream: _roomBookingsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -1373,6 +1583,17 @@ class _CheckActionButtonState extends State<_CheckActionButton> {
 
   Future<void> _submitAction() async {
     if (_isLoading || _isDone) {
+      return;
+    }
+
+    // Block check-in/checkout action if network is offline
+    if (WebSocketService.connectionState.value == 'disconnected') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tidak dapat memproses. Silakan periksa koneksi internet Anda.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
       return;
     }
 

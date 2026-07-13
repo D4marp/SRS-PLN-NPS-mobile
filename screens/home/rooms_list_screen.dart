@@ -6,6 +6,7 @@ import '../../providers/room_provider.dart';
 import '../../utils/app_theme.dart';
 import '../../core/gen/assets.gen.dart';
 import '../room/room_details_screen.dart';
+import '../../widgets/connection_status_widget.dart';
 
 class RoomsListScreen extends StatefulWidget {
   const RoomsListScreen({super.key});
@@ -15,10 +16,9 @@ class RoomsListScreen extends StatefulWidget {
 }
 
 class _RoomsListScreenState extends State<RoomsListScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  List<RoomModel> _rooms = [];
-  bool _isLoading = true;
+    with TickerProviderStateMixin {
+  TabController? _tabController;
+  RoomProvider? _roomProvider;
 
   @override
   void initState() {
@@ -33,23 +33,44 @@ class _RoomsListScreenState extends State<RoomsListScreen>
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newProvider = Provider.of<RoomProvider>(context);
+    if (_roomProvider != newProvider) {
+      _roomProvider?.removeListener(_onRoomsChanged);
+      _roomProvider = newProvider;
+      _roomProvider?.addListener(_onRoomsChanged);
+      _updateTabController(_roomProvider?.allRooms ?? []);
+    }
+  }
+
+  void _onRoomsChanged() {
+    if (!mounted) return;
+    setState(() {
+      _updateTabController(_roomProvider?.allRooms ?? []);
+    });
+  }
+
   Future<void> _loadRooms() async {
     final roomProvider = Provider.of<RoomProvider>(context, listen: false);
     await roomProvider.loadRooms();
+  }
 
-    if (mounted) {
-      setState(() {
-        _rooms = roomProvider.allRooms;
-        if (_rooms.isNotEmpty) {
-          _tabController = TabController(length: _rooms.length, vsync: this);
-        }
-        _isLoading = false;
-      });
+  void _updateTabController(List<RoomModel> newRooms) {
+    if (_tabController == null || _tabController!.length != newRooms.length) {
+      _tabController?.dispose();
+      if (newRooms.isNotEmpty) {
+        _tabController = TabController(length: newRooms.length, vsync: this);
+      } else {
+        _tabController = null;
+      }
     }
   }
 
   @override
   void dispose() {
+    _roomProvider?.removeListener(_onRoomsChanged);
     // Reset orientation when leaving
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -57,215 +78,206 @@ class _RoomsListScreenState extends State<RoomsListScreen>
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
-    if (_rooms.isNotEmpty) {
-      _tabController.dispose();
-    }
+    _tabController?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Select a Room'),
-          backgroundColor: Colors.white,
-          elevation: 0,
-          foregroundColor: Colors.black87,
-        ),
-        body: const Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryText),
-          ),
-        ),
-      );
-    }
+    return Consumer<RoomProvider>(
+      builder: (context, roomProvider, child) {
+        final rooms = roomProvider.allRooms;
+        final isLoading = roomProvider.isLoading;
 
-    if (_rooms.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Select a Room'),
-          backgroundColor: Colors.white,
-          elevation: 0,
-          foregroundColor: Colors.black87,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadRooms,
-            ),
-          ],
-        ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.meeting_room_outlined,
-                size: 64,
-                color: Colors.grey.shade400,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'No Rooms Available',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: AppColors.primaryText,
-                    ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Add rooms from admin panel',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.secondaryText,
-                    ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              ElevatedButton.icon(
-                onPressed: _loadRooms,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Refresh'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryText,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Background Image - Tab Screen
-          Positioned.fill(
-            child: Image(
-              image: Assets.images.bgBooking.provider(),
-              fit: BoxFit.cover,
-            ),
-          ),
-          
-          // Content
-          SafeArea(
-            child: Column(
+        if (isLoading) {
+          return Scaffold(
+            body: Stack(
               children: [
-                // Custom AppBar
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: MediaQuery.of(context).size.width * 0.015,
-                    vertical: MediaQuery.of(context).size.height * 0.02,
-                  ),
-                  decoration: const BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(20),
-                      bottomRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: Row(
+                Positioned.fill(
+                  child: Assets.images.bgPLN.image(fit: BoxFit.cover),
+                ),
+                SafeArea(
+                  child: Column(
                     children: [
-                      IconButton(
-                        icon: Icon(
-                          Icons.arrow_back_ios,
-                          color: Colors.white,
-                          size: MediaQuery.of(context).size.width * 0.02,
-                        ),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                      Expanded(
-                        child: Text(
-                          'Select a Room',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: MediaQuery.of(context).size.width * 0.019,
-                            fontFamily: 'Plus Jakarta Sans',
-                            fontWeight: FontWeight.w700,
+                      _buildTransparentAppBar(context, showBack: false),
+                      const Expanded(
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
-                          textAlign: TextAlign.center,
                         ),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.refresh,
-                          color: Colors.white,
-                          size: MediaQuery.of(context).size.width * 0.02,
-                        ),
-                        onPressed: _loadRooms,
                       ),
                     ],
                   ),
                 ),
-                
-                SizedBox(height: MediaQuery.of(context).size.height * 0.025),
-                
-                // Tabs
-                Container(
-                  height: MediaQuery.of(context).size.height * 0.09,
-                  margin: EdgeInsets.symmetric(
-                    horizontal: MediaQuery.of(context).size.width * 0.015,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  child: TabBar(
-                    controller: _tabController,
-                    isScrollable: true,
-                    labelColor: Colors.white,
-                    unselectedLabelColor: Colors.white70,
-                    indicator: BoxDecoration(
-                      color: Colors.white.withOpacity(0.35),
-                      borderRadius: BorderRadius.circular(25),
-                    ),
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    dividerColor: Colors.transparent,
-                    tabAlignment: TabAlignment.start,
-                    tabs: _rooms.map((room) {
-                      return Tab(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: MediaQuery.of(context).size.width * 0.015,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
+              ],
+            ),
+          );
+        }
+
+        if (rooms.isEmpty) {
+          return Scaffold(
+            body: Stack(
+              children: [
+                Positioned.fill(
+                  child: Assets.images.bgPLN.image(fit: BoxFit.cover),
+                ),
+                SafeArea(
+                  child: Column(
+                    children: [
+                      _buildTransparentAppBar(context, showBack: false),
+                      Expanded(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(
-                                _getRoomIcon(room.roomClass),
-                                size: MediaQuery.of(context).size.width * 0.016,
+                                Icons.meeting_room_outlined,
+                                size: 64,
+                                color: Colors.white.withOpacity(0.7),
                               ),
-                              SizedBox(width: MediaQuery.of(context).size.width * 0.006),
+                              const SizedBox(height: AppSpacing.md),
                               Text(
-                                room.name,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: MediaQuery.of(context).size.width * 0.013,
-                                  fontFamily: 'Plus Jakarta Sans',
+                                'No Rooms Available',
+                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                      color: Colors.white,
+                                    ),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              Text(
+                                'Add rooms from admin panel',
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: Colors.white.withOpacity(0.8),
+                                    ),
+                              ),
+                              const SizedBox(height: AppSpacing.lg),
+                              ElevatedButton.icon(
+                                onPressed: _loadRooms,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Refresh'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: AppColors.primaryText,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                
-                SizedBox(height: MediaQuery.of(context).size.height * 0.025),
-                
-                // Tab Content
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: _rooms.map((room) {
-                      return _buildRoomCard(room);
-                    }).toList(),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
+          );
+        }
+
+        return Scaffold(
+          body: Stack(
+            children: [
+              // Background Image - same as room details
+              Positioned.fill(
+                child: Assets.images.bgPLN.image(
+                  fit: BoxFit.cover,
+                ),
+              ),
+              
+              // Content
+              SafeArea(
+                child: Column(
+                  children: [
+                    // Custom AppBar (no back button — this is a root screen for Booking role)
+                    _buildTransparentAppBar(context, showBack: false),
+                    
+                    SizedBox(height: MediaQuery.of(context).size.height * 0.025),
+                    
+                    // Tabs — only render if TabController is ready
+                    if (_tabController != null) ...[
+                      Container(
+                        height: MediaQuery.of(context).size.height * 0.09,
+                        margin: EdgeInsets.symmetric(
+                          horizontal: MediaQuery.of(context).size.width * 0.015,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        child: TabBar(
+                          controller: _tabController,
+                          isScrollable: true,
+                          labelColor: Colors.white,
+                          unselectedLabelColor: Colors.white70,
+                          indicator: BoxDecoration(
+                            color: Colors.white.withOpacity(0.35),
+                            borderRadius: BorderRadius.circular(25),
+                          ),
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          dividerColor: Colors.transparent,
+                          tabAlignment: TabAlignment.start,
+                          tabs: rooms.map((room) {
+                            return Tab(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: MediaQuery.of(context).size.width * 0.015,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _getRoomIcon(room.roomClass),
+                                      size: MediaQuery.of(context).size.width * 0.016,
+                                    ),
+                                    SizedBox(width: MediaQuery.of(context).size.width * 0.006),
+                                    Text(
+                                      room.name,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: MediaQuery.of(context).size.width * 0.013,
+                                        fontFamily: 'Plus Jakarta Sans',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      
+                      SizedBox(height: MediaQuery.of(context).size.height * 0.025),
+                      
+                      // Tab Content
+                      Expanded(
+                        child: TabBarView(
+                          controller: _tabController,
+                          children: rooms.map((room) {
+                            return _buildRoomCard(room);
+                          }).toList(),
+                        ),
+                      ),
+                    ] else
+                      // Fallback when TabController is not yet ready
+                      const Expanded(
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              // Connection Status
+              const Positioned(
+                right: 16,
+                bottom: 16,
+                child: ConnectionStatusWidget(),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -483,6 +495,50 @@ class _RoomsListScreenState extends State<RoomsListScreen>
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransparentAppBar(BuildContext context, {bool showBack = false}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: MediaQuery.of(context).size.width * 0.015,
+        vertical: MediaQuery.of(context).size.height * 0.02,
+      ),
+      child: Row(
+        children: [
+          if (showBack)
+            IconButton(
+              icon: Icon(
+                Icons.arrow_back_ios,
+                color: Colors.white,
+                size: MediaQuery.of(context).size.width * 0.02,
+              ),
+              onPressed: () => Navigator.of(context).pop(),
+            )
+          else
+            SizedBox(width: MediaQuery.of(context).size.width * 0.05),
+          Expanded(
+            child: Text(
+              'Select a Room',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: MediaQuery.of(context).size.width * 0.019,
+                fontFamily: 'Plus Jakarta Sans',
+                fontWeight: FontWeight.w700,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.refresh,
+              color: Colors.white,
+              size: MediaQuery.of(context).size.width * 0.02,
+            ),
+            onPressed: _loadRooms,
           ),
         ],
       ),

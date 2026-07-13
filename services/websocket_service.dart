@@ -14,6 +14,8 @@ import '../utils/api_config.dart';
 ///   WS /ws/rooms           — rooms list (no auth required)
 ///   WS /ws/bookings?token= — bookings list (JWT in query param)
 class WebSocketService {
+  static final ValueNotifier<String> connectionState = ValueNotifier<String>('connecting');
+
   static String get _wsBase {
     // Replace http(s):// with ws(s)://
     return ApiConfig.baseUrl.replaceFirst(RegExp(r'^http'), 'ws');
@@ -33,10 +35,12 @@ class WebSocketService {
 
     void connect() {
       if (disposed) return;
+      connectionState.value = 'connecting';
       try {
         channel = WebSocketChannel.connect(uri);
         channel!.stream.listen(
           (data) {
+            connectionState.value = 'connected';
             try {
               final msg = jsonDecode(data as String) as Map<String, dynamic>;
               final type = msg['type'] as String?;
@@ -54,16 +58,19 @@ class WebSocketService {
           },
           onError: (error) {
             debugPrint('WebSocket rooms error: $error — reconnecting in 5s');
+            connectionState.value = 'disconnected';
             Future.delayed(const Duration(seconds: 5), connect);
           },
           onDone: () {
             debugPrint('WebSocket rooms closed — reconnecting in 5s');
+            connectionState.value = 'disconnected';
             if (!disposed) Future.delayed(const Duration(seconds: 5), connect);
           },
           cancelOnError: true,
         );
       } catch (e) {
         debugPrint('WebSocket rooms connect failed: $e');
+        connectionState.value = 'disconnected';
         Future.delayed(const Duration(seconds: 5), connect);
       }
     }
@@ -96,10 +103,12 @@ class WebSocketService {
 
     void connect() {
       if (disposed) return;
+      connectionState.value = 'connecting';
       try {
         channel = WebSocketChannel.connect(uri);
         channel!.stream.listen(
           (data) {
+            connectionState.value = 'connected';
             try {
               final msg = jsonDecode(data as String) as Map<String, dynamic>;
               final type = msg['type'] as String?;
@@ -117,17 +126,20 @@ class WebSocketService {
           },
           onError: (error) {
             debugPrint('WebSocket bookings error: $error — reconnecting in 5s');
+            connectionState.value = 'disconnected';
             if (!controller.isClosed) controller.addError(error);
             Future.delayed(const Duration(seconds: 5), connect);
           },
           onDone: () {
             debugPrint('WebSocket bookings closed — reconnecting in 5s');
+            connectionState.value = 'disconnected';
             if (!disposed) Future.delayed(const Duration(seconds: 5), connect);
           },
           cancelOnError: true,
         );
       } catch (e) {
         debugPrint('WebSocket bookings connect failed: $e');
+        connectionState.value = 'disconnected';
         if (!controller.isClosed) controller.addError(e);
         Future.delayed(const Duration(seconds: 5), connect);
       }

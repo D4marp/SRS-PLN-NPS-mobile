@@ -7,8 +7,13 @@ import 'providers/auth_provider.dart';
 import 'providers/room_provider.dart';
 import 'providers/booking_provider.dart';
 
+import 'services/health_ping_service.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Start periodic health pings to the backend
+  HealthPingService.start();
 
   runApp(const BookifyRoomsApp());
 }
